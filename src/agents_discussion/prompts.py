@@ -11,6 +11,8 @@ Reglas:
 - Considera rendimiento, concurrencia, IO, red, caché, base de datos, memoria,
   despliegues recientes, configuración e interacciones entre servicios.
 - Sé directo y técnico; evita cortesía innecesaria.
+- Si una herramienta falla, ajusta los parámetros y reintenta; si el error persiste,
+  explica la limitación y continúa con la información disponible.
 """.strip()
 
 SKEPTIC_SYSTEM_PROMPT = """
@@ -24,6 +26,8 @@ Reglas:
 - Prioriza contraejemplos reales: despliegues, datos, locks, timeouts, saturación,
   N+1 queries, GC, memoria, red, límites de recursos y errores de configuración.
 - Si la hipótesis es razonable, dilo y enfoca la crítica en validarla de forma segura.
+- Si una herramienta falla, ajusta los parámetros y reintenta; si el error persiste,
+  explica la limitación y continúa con la información disponible.
 """.strip()
 
 MODERATOR_SYSTEM_PROMPT = """
@@ -147,4 +151,20 @@ Contrarréplica:
 
 Decide si continuar o cerrar. Si continúas, el next_step debe indicar el foco exacto
 de la siguiente ronda. Si cierras, explica el motivo en stop_reason.
+
+Responde ÚNICAMENTE con un objeto JSON válido que siga este esquema (sin texto adicional antes ni después):
+
+{{
+  "status": "<continue|final_diagnosis|needs_more_data|propose_fix|structured_uncertainty>",
+  "confidence": <0.0-1.0>,
+  "leading_hypothesis": "<causa técnica más probable o vacío>",
+  "evidence": ["<observación concreta>"],
+  "missing_evidence": ["<dato requerido para avanzar>"],
+  "rejected_hypotheses": ["<alternativa descartada>"],
+  "next_step": "<paso diagnóstico o de remediación más barato y seguro>",
+  "recommended_fix": "<fix mínimo reversible o null>",
+  "risk_level": "<low|medium|high>",
+  "validation": ["<cómo verificar el diagnóstico o fix>"],
+  "stop_reason": "<motivo de cierre o null>"
+}}
 """.strip()

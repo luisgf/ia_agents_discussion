@@ -11,14 +11,17 @@ dependencies = [
     "pydantic>=2.7.0",
     "pydantic-settings>=2.3.0",
     "python-dotenv>=1.0.1",
+    "paramiko>=3.0.0",
     "python-multipart>=0.0.9",
+    "requests>=2.31.0",
     "rich>=13.7.0",
     "uvicorn>=0.30.0",
 ]
 
 [project.scripts]
-agents-discuss = "agents_discussion.cli:main"
-agents-discuss-web = "agents_discussion.web:main"
+agents-discuss              = "agents_discussion.cli:main"
+agents-discuss-web          = "agents_discussion.web:main"
+agents-discuss-copilot-auth = "agents_discussion.auth_copilot:main"
 
 [build-system]
 requires = ["hatchling"]

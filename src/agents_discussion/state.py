@@ -8,6 +8,20 @@ class DebateMessage(BaseModel):
     content: str
 
 
+class ToolCallEntry(TypedDict):
+    """Record of a single tool invocation made by an agent."""
+
+    agent: str       # node name, e.g. "diagnostic_agent"
+    tool_name: str   # e.g. "run_ssh_command"
+    args: dict       # arguments passed to the tool
+    result: str      # truncated output / error message
+    error: bool      # True when the tool raised an exception
+
+
+def _append_list(current: list | None, new: list | None) -> list:
+    return (current or []) + (new or [])
+
+
 class ModeratorDecision(BaseModel):
     status: Literal[
         "continue",
@@ -46,4 +60,9 @@ class DebateState(TypedDict):
     diagnostic_rebuttal: str
     moderator_decision: ModeratorDecision | None
     history: Annotated[list[DebateMessage], append_messages]
+    tool_calls_log: Annotated[list[ToolCallEntry], _append_list]
     final_result: str | None
+    # Per-run model selections (resolved from form or settings defaults)
+    diagnostic_model: str
+    skeptic_model: str
+    moderator_model: str
