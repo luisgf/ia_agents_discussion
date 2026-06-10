@@ -16,6 +16,7 @@ class ToolCallEntry(TypedDict):
     args: dict       # arguments passed to the tool
     result: str      # truncated output / error message
     error: bool      # True when the tool raised an exception
+    approval: str    # auto | approved | rejected | timeout
 
 
 def _append_list(current: list | None, new: list | None) -> list:
@@ -66,3 +67,9 @@ class DebateState(TypedDict):
     diagnostic_model: str
     skeptic_model: str
     moderator_model: str
+    # Web-run plumbing: run_id links graph nodes to the RunControl registry
+    # (tool approval, human-in-the-loop, cancellation). Empty for CLI runs.
+    run_id: str
+    # Prompt template selection (see prompt_store.py)
+    template: str
+    language: str

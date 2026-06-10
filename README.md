@@ -1,12 +1,14 @@
 # Agents Discussion
 
-Sistema multiagente para diagnosticar problemas técnicos, rendimiento y fixes de código. Usa LangGraph y tres agentes con modelos distintos consumidos mediante el endpoint OpenAI-compatible de GitHub Models.
+Sistema multiagente para diagnosticar problemas técnicos, rendimiento y fixes de código. Usa LangGraph y tres agentes con modelos distintos consumidos mediante GitHub Models o GitHub Copilot.
 
 ## Agentes
 
 - Diagnóstico Principal: propone la causa técnica más probable y un experimento mínimo.
 - Revisor Escéptico: intenta falsar la hipótesis, propone alternativas y evalúa riesgos.
-- Moderador / Tech Lead: decide si continuar, pedir más datos, recomendar fix o cerrar con incertidumbre estructurada.
+- Moderador / Tech Lead: decide si continuar, pedir más datos, recomendar fix o cerrar con incertidumbre estructurada. Recibe el historial completo del debate y devuelve una decisión estructurada (structured output con fallback a parseo JSON).
+
+Los agentes citan la evidencia instrumental con el formato `[tool:<nombre>]` y el moderador pondera la confianza según la calidad de la evidencia.
 
 ## Instalación
 
@@ -16,27 +18,92 @@ source .venv/bin/activate
 pip install -e .
 ```
 
+### Docker
+
+```bash
+cp .env.example .env   # edita credenciales y modelos
+docker compose up --build
+```
+
+El estado persistente (runs, audit log, plantillas personalizadas) vive en el volumen `/data`. Para exponerlo a más usuarios ponlo detrás de un reverse proxy con TLS y autenticación.
+
 ## Configuración
 
 ```bash
 cp .env.example .env
 ```
 
-Edita `.env`:
+Variables principales:
 
 ```env
-GITHUB_TOKEN=ghp_your_token_here
-GITHUB_MODELS_BASE_URL=https://models.github.ai/inference
+GITHUB_TOKEN=ghp_your_token_here          # solo para GitHub Models
+COPILOT_TOKEN=ghu_xxx                     # solo para modelos copilot/*
 
-DIAGNOSTIC_MODEL=openai/gpt-4.1
-SKEPTIC_MODEL=anthropic/claude-3.5-sonnet
-MODERATOR_MODEL=google/gemini-2.0-flash
+DIAGNOSTIC_MODEL=copilot/gpt-4o
+SKEPTIC_MODEL=copilot/claude-sonnet-4.6
+MODERATOR_MODEL=copilot/claude-sonnet-4.6
 
 MAX_ROUNDS=4
 CONFIDENCE_THRESHOLD=0.8
+
+PROMPT_TEMPLATE=default                   # default|performance|errors|data|security
+PROMPT_LANGUAGE=es                        # es|en
+
+TOOL_APPROVAL_REQUIRED=true
+APPROVAL_REQUIRED_TOOLS=run_ssh_command,run_local_command,run_kubectl,run_db_explain
+
+WEB_HOST=127.0.0.1
+WEB_PORT=8000
 ```
 
-Nota: necesitas acceso habilitado a GitHub Models para los modelos configurados. Si un modelo no está disponible para tu cuenta, cambia su identificador en `.env`.
+Ver `.env.example` para la lista completa (timeouts de aprobación, endpoints de observabilidad, etc.).
+
+## Plantillas de prompts
+
+Los system prompts están versionados en YAML por tipo de incidente e idioma:
+
+- `default` — diagnóstico general
+- `performance` — degradación de rendimiento y latencia
+- `errors` — errores 5xx, excepciones y fallos intermitentes
+- `data` — inconsistencias de datos, duplicados y corrupción
+- `security` — incidentes de seguridad y accesos anómalos
+
+Cada una existe en `es` y `en`. Las plantillas integradas viven en `src/agents_discussion/prompt_templates/`. Un administrador puede **añadir o sobreescribir** plantillas colocando ficheros `<nombre>.<lang>.yaml` en `PROMPTS_DIR` (por defecto `~/.local/share/agents-discussion/prompts`); los ficheros personalizados tienen prioridad sobre los integrados con el mismo nombre+idioma. Formato:
+
+```yaml
+name: mi-plantilla
+language: es
+version: 1
+description: Descripción visible en la UI
+diagnostic_system: |
+  ...
+skeptic_system: |
+  ...
+moderator_system: |
+  ...
+```
+
+## Herramientas de diagnóstico
+
+Los agentes disponen de tools en un bucle ReAct (`TOOLS_ENABLED=true`):
+
+| Tool | Descripción | Aprobación por defecto |
+|---|---|---|
+| `run_ssh_command` | Comando remoto por SSH | manual |
+| `run_local_command` | Comando shell local | manual |
+| `run_kubectl` | kubectl solo lectura (get/describe/logs/top/...) | manual |
+| `run_db_explain` | `EXPLAIN` de un SELECT vía psql (sin ejecutar la query) | manual |
+| `http_get` | GET a health endpoints / APIs internas | automática |
+| `query_prometheus` | Consulta PromQL instantánea (`PROMETHEUS_URL`) | automática |
+| `query_loki` | Consulta LogQL de rango (`LOKI_URL`) | automática |
+| `query_elasticsearch` | `_search` de solo lectura (`ELASTICSEARCH_URL`) | automática |
+| `git_recent_changes` | Commits recientes + diffstat (diff de deploys) | automática |
+
+`ENABLED_TOOLS` limita qué tools se exponen; `APPROVAL_REQUIRED_TOOLS` define cuáles requieren aprobación.
+
+### Aprobación humana y auditoría
+
+En la web, las tools sensibles se **pausan hasta que el operador las aprueba o rechaza** desde la propia conversación (timeout configurable con `APPROVAL_TIMEOUT_SECONDS`; sin respuesta no se ejecutan). Cada invocación —aprobada, rechazada o automática— queda registrada en `DATA_DIR/audit.jsonl` con timestamp, run, agente, argumentos y resultado.
 
 ## Uso
 
@@ -44,177 +111,63 @@ Nota: necesitas acceso habilitado a GitHub Models para los modelos configurados.
 
 ```bash
 agents-discuss "El endpoint /orders tarda 8s desde el último deploy"
+agents-discuss "Diagnosticar degradación" --file incident.md --base-context arch.md
+agents-discuss "Diagnosticar lentitud en /orders" --project ./backend --include "src/**/*.py"
 ```
 
-Con contexto desde archivo:
+La CLI no aplica gating de aprobación (las tools se ejecutan directamente), pero sí audita. Opciones: `--base-context` (repetible), `--no-redact-context`, `--max-files`, `--max-chars-per-file`, `--show-history`.
+
+### Web
 
 ```bash
-agents-discuss "Diagnosticar degradación de rendimiento" --file incident.md
+agents-discuss-web        # http://127.0.0.1:8000 (configurable con WEB_HOST/WEB_PORT)
 ```
 
-Con contexto base estable del sistema:
+La ejecución del debate corre **en background en el servidor**: cerrar o refrescar el navegador no detiene el debate, puedes reconectarte desde el historial («Ver en vivo») y varios espectadores pueden seguir el mismo run.
 
-```bash
-agents-discuss "Diagnosticar timeouts en creación de órdenes" \
-  --base-context examples/base-context.example.md \
-  --file incident.md
-```
+Desde la UI puedes:
 
-Puedes pasar varios archivos de contexto base:
+- elegir tipo de incidente (plantilla de prompts) e idioma (es/en)
+- elegir modelo por agente
+- activar **aprobación manual de herramientas** (por defecto según `TOOL_APPROVAL_REQUIRED`)
+- activar **pausa entre rondas** (human-in-the-loop): el debate se detiene tras cada decisión `continue` del moderador y puedes inyectar un comentario o dato que entra en el historial de la siguiente ronda
+- **detener** un debate en curso
+- **exportar el informe** completo del debate a Markdown
+- **reanudar un debate cerrado con nueva evidencia**: si el moderador cerró con `needs_more_data` (o quieres aportar más datos), el nuevo debate parte del historial completo del anterior más la evidencia aportada
 
-```bash
-agents-discuss "Diagnosticar errores intermitentes de pagos" \
-  --base-context architecture.md \
-  --base-context runtime-constraints.md \
-  --file incident.md
-```
+API principal:
 
-Leyendo código fuente de un proyecto:
-
-```bash
-agents-discuss "Diagnosticar lentitud en /orders" --project ./backend
-```
-
-Limitando los archivos incluidos con patrones glob:
-
-```bash
-agents-discuss "Revisar rendimiento del endpoint de órdenes" \
-  --project ./backend \
-  --include "src/**/*.py" \
-  --include "tests/**/*.py"
-```
-
-Controlando límites de contexto:
-
-```bash
-agents-discuss "Diagnosticar bug de autenticación" \
-  --project ./app \
-  --max-files 12 \
-  --max-chars-per-file 8000
-```
-
-Mostrar todos los turnos:
-
-```bash
-agents-discuss "El servicio consume CPU al 100%" --file logs.md --show-history
+```text
+POST   /api/runs                      iniciar debate (form multipart)
+GET    /api/runs                      historial
+GET    /api/runs/{id}                 run completo (vivo o terminado)
+GET    /api/runs/{id}/events          SSE (suscripción en vivo o replay)
+GET    /api/runs/{id}/report          informe Markdown descargable
+POST   /api/runs/{id}/resume          reanudar con nueva evidencia
+POST   /api/runs/{id}/approval        resolver aprobación de tool {call_id, approved}
+POST   /api/runs/{id}/comment         comentario entre rondas {comment}
+DELETE /api/runs/{id}                 cancelar (en curso) o borrar (terminado)
+GET    /api/prompts                   plantillas disponibles
 ```
 
 ## Lectura de proyectos
 
-Cuando usas `--project`, la CLI construye un contexto simple con archivos del proyecto y lo pasa a los agentes. Si no indicas `--include`, se usan patrones comunes:
+Cuando usas `--project` (o «Ruta del proyecto» en la web), se construye un contexto con archivos del proyecto. Sin `--include` se usan patrones comunes (`README*`, `pyproject.toml`, `package.json`, `src/**/*`, `tests/**/*`, ...). Se ignoran `.git`, `.venv`, `node_modules`, `dist`, `build`, etc. Límites: `--max-files` (20) y `--max-chars-per-file` (12000).
 
-- `README*`
-- `pyproject.toml`
-- `requirements*.txt`
-- `package.json`
-- `tsconfig.json`
-- `go.mod`
-- `Cargo.toml`
-- `Dockerfile`
-- `docker-compose*.yml`
-- `src/**/*`
-- `tests/**/*`
+Nota: la ruta se lee del disco de la máquina donde corre el servidor. Úsalo como herramienta local o restringe el acceso si lo expones en red.
 
-Se ignoran directorios pesados como `.git`, `.venv`, `node_modules`, `dist`, `build`, `target`, `__pycache__`, `.next` y caches comunes.
+## Contexto base y redacción de secretos
 
-La lectura está limitada por:
-
-- `--max-files`, por defecto `20`.
-- `--max-chars-per-file`, por defecto `12000`.
-
-Los archivos binarios o no decodificables como UTF-8 se omiten.
-
-## Contexto base
-
-`--base-context` sirve para orientar a los agentes con información estable del sistema, como arquitectura, servicios, parámetros no secretos de conexión, SLAs, restricciones operativas o convenciones del proyecto.
-
-Ejemplo de contenido útil:
-
-- servicios involucrados
-- hosts y puertos no secretos
-- nombres de colas, topics o bases de datos
-- rutas principales de APIs
-- límites de latencia esperados
-- restricciones de despliegue o rollback
-- herramientas de observabilidad disponibles
-
-Por defecto, la CLI intenta redactar valores que parecen secretos antes de enviarlos a los modelos, incluyendo claves como `password`, `token`, `secret`, `api_key` y credenciales en URIs.
-
-Si necesitas desactivar esa redacción explícitamente:
-
-```bash
-agents-discuss "Diagnosticar conexión a base de datos" \
-  --base-context local-context.md \
-  --no-redact-context
-```
-
-Evita enviar credenciales reales a modelos remotos salvo que tengas una razón clara y controles de seguridad adecuados.
-
-También puedes ejecutarlo como módulo:
-
-```bash
-python -m agents_discussion.cli "El worker se queda procesando mensajes duplicados"
-```
-
-### Web local
-
-Puedes abrir una aplicación web local para ver la conversación de los agentes y el resultado en tiempo real:
-
-```bash
-agents-discuss-web
-```
-
-Luego abre:
-
-```text
-http://127.0.0.1:8000
-```
-
-La web permite enviar:
-
-- tema del diagnóstico
-- uno o varios archivos de contexto base
-- archivo de incidente/logs
-- ruta de proyecto en disco
-- patrones include separados por coma
-- límites de archivos y caracteres por archivo
-
-Los eventos se reciben con Server-Sent Events desde:
-
-```text
-/api/runs/{run_id}/events
-```
-
-La interfaz muestra cada turno cuando termina:
-
-- Diagnóstico Principal
-- Revisor Escéptico
-- Contrarréplica
-- Moderador
-- Resultado final
-
-Nota: la ruta de proyecto se lee desde el disco de la máquina donde corre el servidor web. Úsalo como herramienta local o restringe el acceso si lo expones en red.
+`--base-context` orienta a los agentes con información estable (arquitectura, servicios, SLAs, restricciones). Por defecto se redactan valores que parecen secretos (`password`, `token`, `api_key`, credenciales en URIs) antes de enviarlos a los modelos; desactivable con `--no-redact-context`.
 
 ## Criterios de parada
 
 - El moderador emite un estado distinto de `continue`.
 - La confianza alcanza `CONFIDENCE_THRESHOLD`.
 - Se alcanza `MAX_ROUNDS`.
-- Faltan datos críticos.
+- Faltan datos críticos (`needs_more_data` — reanudable después con nueva evidencia).
 - Existe un fix mínimo suficientemente claro o un desacuerdo estructurado.
 
 ## Salida
 
-La salida final incluye:
-
-- estado
-- confianza
-- riesgo
-- hipótesis principal
-- evidencia
-- evidencia faltante
-- hipótesis rechazadas
-- siguiente paso
-- fix recomendado
-- validación
-- motivo de cierre
+La decisión final incluye: estado, confianza, riesgo, hipótesis principal, evidencia, evidencia faltante, hipótesis rechazadas, siguiente paso, fix recomendado, validación y motivo de cierre. El informe Markdown exportable añade todos los turnos, tool calls y un resumen ejecutivo.

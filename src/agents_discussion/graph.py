@@ -4,17 +4,18 @@ import re
 from langchain_core.messages import HumanMessage, SystemMessage, ToolMessage
 from langgraph.graph import END, START, StateGraph
 
+from agents_discussion.audit import audit_tool_call
 from agents_discussion.config import get_settings
 from agents_discussion.models import create_github_model
+from agents_discussion.prompt_store import PromptTemplate, get_template
 from agents_discussion.prompts import (
-    DIAGNOSTIC_SYSTEM_PROMPT,
-    MODERATOR_SYSTEM_PROMPT,
-    SKEPTIC_SYSTEM_PROMPT,
     diagnostic_prompt,
+    moderator_json_fallback_suffix,
     moderator_prompt,
     rebuttal_prompt,
     skeptic_prompt,
 )
+from agents_discussion.runtime import get_control
 from agents_discussion.state import DebateMessage, DebateState, ModeratorDecision, ToolCallEntry
 from agents_discussion.tools import get_tools
 
@@ -33,6 +34,10 @@ def _message_content(response: object) -> str:
     return str(content)
 
 
+def _template_for(state: DebateState) -> PromptTemplate:
+    return get_template(state.get("template", ""), state.get("language", ""))
+
+
 # ── ReAct loop ───────────────────────────────────────────────────────────────
 
 
@@ -41,13 +46,17 @@ def _run_with_tools(
     agent_node: str,
     system_prompt: str,
     user_message: str,
+    run_id: str = "",
 ) -> tuple[str, list[ToolCallEntry]]:
     """Run a model in a ReAct loop: LLM → tool call(s) → LLM → … → final text.
 
     Returns the agent's final text response and a list of ToolCallEntry records.
-    Tools are only used when TOOLS_ENABLED=true in settings.
+    Tools are only used when TOOLS_ENABLED=true in settings. When the run has a
+    registered RunControl (web runs), gated tools block until the operator
+    approves them, and cancellation aborts the loop between LLM calls.
     """
     settings = get_settings()
+    control = get_control(run_id)
     tools = get_tools() if settings.tools_enabled else []
     model = model_factory()
     if tools:
@@ -61,8 +70,12 @@ def _run_with_tools(
     tool_log: list[ToolCallEntry] = []
     call_count = 0
     consecutive_errors = 0
+    agent_role = AGENT_EVENT_FIELDS.get(agent_node, ("", agent_node))[1]
 
     while call_count <= settings.max_tool_calls_per_agent:
+        if control is not None:
+            control.raise_if_cancelled()
+
         response = model.invoke(messages)
         messages.append(response)
 
@@ -86,9 +99,27 @@ def _run_with_tools(
             call_id: str = tc["id"]
 
             tool_fn = tool_map.get(tool_name)
+            approval = "auto"
             if tool_fn is None:
                 result = f"Unknown tool: {tool_name}"
                 error = True
+            elif control is not None and control.needs_approval(tool_name):
+                approved, approval = control.request_approval(tool_name, tool_args, agent_role)
+                if approved:
+                    try:
+                        result = str(tool_fn.invoke(tool_args))
+                        error = False
+                    except Exception as exc:  # noqa: BLE001
+                        result = f"Tool error: {exc}"
+                        error = True
+                else:
+                    result = (
+                        "El operador no aprobó esta llamada "
+                        f"({'timeout' if approval == 'timeout' else 'rechazada'}). "
+                        "No la repitas; usa otra herramienta o continúa con la "
+                        "información disponible."
+                    )
+                    error = False
             else:
                 try:
                     result = str(tool_fn.invoke(tool_args))
@@ -97,6 +128,7 @@ def _run_with_tools(
                     result = f"Tool error: {exc}"
                     error = True
 
+            audit_tool_call(run_id, agent_node, tool_name, tool_args, result, error, approval)
             tool_log.append(
                 ToolCallEntry(
                     agent=agent_node,
@@ -104,6 +136,7 @@ def _run_with_tools(
                     args=tool_args,
                     result=result,
                     error=error,
+                    approval=approval,
                 )
             )
             messages.append(ToolMessage(content=result, tool_call_id=call_id))
@@ -138,11 +171,16 @@ def _run_with_tools(
 
 
 def diagnostic_agent(state: DebateState) -> dict[str, object]:
+    template = _template_for(state)
     content, tool_log = _run_with_tools(
         lambda: create_github_model(state["diagnostic_model"], temperature=0.2),
         "diagnostic_agent",
-        DIAGNOSTIC_SYSTEM_PROMPT,
-        diagnostic_prompt(state["topic"], state["context"], state["round"], state["history"]),
+        template.diagnostic_system,
+        diagnostic_prompt(
+            state["topic"], state["context"], state["round"], state["history"],
+            language=state.get("language", "es"),
+        ),
+        run_id=state.get("run_id", ""),
     )
     return {
         "diagnostic_response": content,
@@ -152,11 +190,16 @@ def diagnostic_agent(state: DebateState) -> dict[str, object]:
 
 
 def skeptic_agent(state: DebateState) -> dict[str, object]:
+    template = _template_for(state)
     content, tool_log = _run_with_tools(
         lambda: create_github_model(state["skeptic_model"], temperature=0.1),
         "skeptic_agent",
-        SKEPTIC_SYSTEM_PROMPT,
-        skeptic_prompt(state["topic"], state["context"], state["diagnostic_response"], state["history"]),
+        template.skeptic_system,
+        skeptic_prompt(
+            state["topic"], state["context"], state["diagnostic_response"], state["history"],
+            language=state.get("language", "es"),
+        ),
+        run_id=state.get("run_id", ""),
     )
     return {
         "skeptic_response": content,
@@ -166,11 +209,16 @@ def skeptic_agent(state: DebateState) -> dict[str, object]:
 
 
 def diagnostic_rebuttal_agent(state: DebateState) -> dict[str, object]:
+    template = _template_for(state)
     content, tool_log = _run_with_tools(
         lambda: create_github_model(state["diagnostic_model"], temperature=0.2),
         "diagnostic_rebuttal_agent",
-        DIAGNOSTIC_SYSTEM_PROMPT,
-        rebuttal_prompt(state["topic"], state["context"], state["diagnostic_response"], state["skeptic_response"]),
+        template.diagnostic_system,
+        rebuttal_prompt(
+            state["topic"], state["context"], state["diagnostic_response"],
+            state["skeptic_response"], language=state.get("language", "es"),
+        ),
+        run_id=state.get("run_id", ""),
     )
     return {
         "diagnostic_rebuttal": content,
@@ -201,26 +249,49 @@ def _parse_moderator_response(text: str) -> ModeratorDecision:
 
 
 def moderator_agent(state: DebateState) -> dict[str, object]:
+    control = get_control(state.get("run_id", ""))
+    if control is not None:
+        control.raise_if_cancelled()
+
+    template = _template_for(state)
+    language = state.get("language", "es")
     model = create_github_model(state["moderator_model"], temperature=0.0)
-    response = model.invoke(
-        [
-            SystemMessage(content=MODERATOR_SYSTEM_PROMPT),
-            HumanMessage(
-                content=moderator_prompt(
-                    state["topic"],
-                    state["context"],
-                    state["round"],
-                    state["max_rounds"],
-                    state["confidence_threshold"],
-                    state["diagnostic_response"],
-                    state["skeptic_response"],
-                    state["diagnostic_rebuttal"],
-                )
-            ),
-        ]
+    prompt = moderator_prompt(
+        state["topic"],
+        state["context"],
+        state["round"],
+        state["max_rounds"],
+        state["confidence_threshold"],
+        state["diagnostic_response"],
+        state["skeptic_response"],
+        state["diagnostic_rebuttal"],
+        history=state["history"],
+        language=language,
     )
 
-    decision = _parse_moderator_response(_message_content(response))
+    decision: ModeratorDecision | None = None
+    try:
+        structured = model.with_structured_output(ModeratorDecision)
+        result = structured.invoke(
+            [
+                SystemMessage(content=template.moderator_system),
+                HumanMessage(content=prompt),
+            ]
+        )
+        if isinstance(result, ModeratorDecision):
+            decision = result
+    except Exception:  # noqa: BLE001 — model/endpoint without tool-call support
+        decision = None
+
+    if decision is None:
+        # Fallback: plain text completion + JSON extraction (legacy path).
+        response = model.invoke(
+            [
+                SystemMessage(content=template.moderator_system),
+                HumanMessage(content=prompt + moderator_json_fallback_suffix(language)),
+            ]
+        )
+        decision = _parse_moderator_response(_message_content(response))
 
     next_round = state["round"] + 1 if decision.status == "continue" else state["round"]
     return {
@@ -228,6 +299,21 @@ def moderator_agent(state: DebateState) -> dict[str, object]:
         "round": next_round,
         "history": [DebateMessage(role="moderator", content=decision.model_dump_json(indent=2))],
     }
+
+
+def user_input_gate(state: DebateState) -> dict[str, object]:
+    """Human-in-the-loop pause between rounds (web runs with the option enabled).
+
+    Blocks until the operator submits a comment or skips; the comment is added
+    to the debate history so the next round's agents can react to it.
+    """
+    control = get_control(state.get("run_id", ""))
+    if control is None or not control.pause_between_rounds:
+        return {}
+    comment = control.wait_for_comment(state["round"])
+    if comment:
+        return {"history": [DebateMessage(role="user", content=comment)]}
+    return {}
 
 
 def finalize(state: DebateState) -> dict[str, object]:
@@ -283,7 +369,7 @@ def route_after_moderator(state: DebateState) -> str:
         return "finalize"
     if decision.status != "continue":
         return "finalize"
-    return "diagnostic_agent"
+    return "user_input_gate"
 
 
 def build_graph():
@@ -293,6 +379,7 @@ def build_graph():
     builder.add_node("skeptic_agent", skeptic_agent)
     builder.add_node("diagnostic_rebuttal_agent", diagnostic_rebuttal_agent)
     builder.add_node("moderator_agent", moderator_agent)
+    builder.add_node("user_input_gate", user_input_gate)
     builder.add_node("finalize", finalize)
 
     builder.add_edge(START, "diagnostic_agent")
@@ -303,10 +390,11 @@ def build_graph():
         "moderator_agent",
         route_after_moderator,
         {
-            "diagnostic_agent": "diagnostic_agent",
+            "user_input_gate": "user_input_gate",
             "finalize": "finalize",
         },
     )
+    builder.add_edge("user_input_gate", "diagnostic_agent")
     builder.add_edge("finalize", END)
 
     return builder.compile()
@@ -318,6 +406,10 @@ def create_initial_state(
     diagnostic_model: str = "",
     skeptic_model: str = "",
     moderator_model: str = "",
+    run_id: str = "",
+    template: str = "",
+    language: str = "",
+    initial_history: list[DebateMessage] | None = None,
 ) -> DebateState:
     settings = get_settings()
     return {
@@ -330,19 +422,28 @@ def create_initial_state(
         "skeptic_response": "",
         "diagnostic_rebuttal": "",
         "moderator_decision": None,
-        "history": [],
+        "history": list(initial_history or []),
         "tool_calls_log": [],
         "final_result": None,
         "diagnostic_model": diagnostic_model or settings.diagnostic_model,
         "skeptic_model": skeptic_model or settings.skeptic_model,
         "moderator_model": moderator_model or settings.moderator_model,
+        "run_id": run_id,
+        "template": template or settings.prompt_template,
+        "language": language or settings.prompt_language,
     }
+
+
+def _graph_config(state: DebateState) -> dict:
+    # 6 nodes per round (incl. the HITL gate) plus margin; the default
+    # recursion limit (25) is too low for MAX_ROUNDS >= 5.
+    return {"recursion_limit": state["max_rounds"] * 6 + 10}
 
 
 def run_debate(topic: str, context: str = "") -> DebateState:
     graph = build_graph()
     initial_state = create_initial_state(topic, context)
-    return graph.invoke(initial_state)
+    return graph.invoke(initial_state, _graph_config(initial_state))
 
 
 def stream_debate_events(
@@ -351,6 +452,10 @@ def stream_debate_events(
     diagnostic_model: str = "",
     skeptic_model: str = "",
     moderator_model: str = "",
+    run_id: str = "",
+    template: str = "",
+    language: str = "",
+    initial_history: list[DebateMessage] | None = None,
 ):
     graph = build_graph()
     initial_state = create_initial_state(
@@ -359,6 +464,10 @@ def stream_debate_events(
         diagnostic_model=diagnostic_model,
         skeptic_model=skeptic_model,
         moderator_model=moderator_model,
+        run_id=run_id,
+        template=template,
+        language=language,
+        initial_history=initial_history,
     )
 
     yield {
@@ -367,10 +476,14 @@ def stream_debate_events(
         "topic": topic,
         "max_rounds": initial_state["max_rounds"],
         "confidence_threshold": initial_state["confidence_threshold"],
+        "template": initial_state["template"],
+        "language": initial_state["language"],
     }
 
-    for update in graph.stream(initial_state, stream_mode="updates"):
+    for update in graph.stream(initial_state, _graph_config(initial_state), stream_mode="updates"):
         for node_name, node_update in update.items():
+            if not node_update:
+                continue
             # ── Tool calls produced by this node (emitted before the response) ──
             for tc in node_update.get("tool_calls_log") or []:
                 yield {
@@ -381,6 +494,7 @@ def stream_debate_events(
                     "args": tc["args"],
                     "result": tc["result"],
                     "error": tc["error"],
+                    "approval": tc.get("approval", "auto"),
                 }
 
             # ── Agent text response ──

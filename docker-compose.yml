@@ -1,0 +1,22 @@
+services:
+  agents-discussion:
+    build: .
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
+    environment:
+      WEB_HOST: 0.0.0.0
+      WEB_PORT: "8000"
+      DATA_DIR: /data/runs
+      PROMPTS_DIR: /data/prompts
+    volumes:
+      - agents-data:/data
+      # Mount SSH keys read-only if agents need run_ssh_command:
+      # - ~/.ssh:/root/.ssh:ro
+      # Corporate CA bundle, if needed:
+      # - /etc/ssl/certs/corp-ca.pem:/etc/ssl/certs/corp-ca.pem:ro
+    restart: unless-stopped
+
+volumes:
+  agents-data:
