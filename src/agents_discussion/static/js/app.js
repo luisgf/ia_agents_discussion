@@ -52,6 +52,8 @@ const apprCards   = {};     // call_id → approval card element
 let hitlBanner    = null;   // active HITL banner element
 let liveAgent     = null;   // streaming agent card: { el, body, buffer, node, role, timer }
 const toolCards   = {};     // call_id → running tool-call card (awaiting result)
+const toolCardGroups = {};  // call_id → grouped tool-call container
+let activeToolGroup = null; // consecutive tool-call group currently receiving cards
 
 // ── DOM ────────────────────────────────────────────────────────────────
 const form        = document.getElementById('run-form');
@@ -127,8 +129,10 @@ function clearThread() {
   hideTyping();
   Object.keys(apprCards).forEach(k => delete apprCards[k]);
   Object.keys(toolCards).forEach(k => delete toolCards[k]);
+  Object.keys(toolCardGroups).forEach(k => delete toolCardGroups[k]);
   if (liveAgent && liveAgent.timer) clearTimeout(liveAgent.timer);
   liveAgent = null;
+  activeToolGroup = null;
   hitlBanner = null;
   hidePostRunActions();
   hideResumePanel();
@@ -537,6 +541,88 @@ function buildRunningToolCard(ev) {
   return card;
 }
 
+function closeToolGroup() {
+  activeToolGroup = null;
+}
+
+function ensureToolGroup(ev) {
+  if (activeToolGroup) return activeToolGroup;
+
+  const group = {
+    el: document.createElement('div'),
+    body: null,
+    countEl: null,
+    errEl: null,
+    runEl: null,
+    agentEl: null,
+    count: 0,
+    errors: 0,
+    running: 0,
+    agents: new Set(),
+  };
+  group.el.className = 'tc-group collapsed';
+  group.el.innerHTML =
+    '<div class="tc-group-head">' +
+      '<span class="tc-group-ico">' + TOOL_ICO + '</span>' +
+      '<span class="tc-group-title">Herramientas</span>' +
+      '<span class="tc-group-count">0 llamadas</span>' +
+      '<span class="tc-group-errors hidden">0 errores</span>' +
+      '<span class="tc-group-running hidden">ejecutando&hellip;</span>' +
+      '<span class="tc-group-agent"></span>' +
+      '<span class="tc-group-arrow">&#9654;</span>' +
+    '</div>' +
+    '<div class="tc-group-body"></div>';
+  group.body = group.el.querySelector('.tc-group-body');
+  group.countEl = group.el.querySelector('.tc-group-count');
+  group.errEl = group.el.querySelector('.tc-group-errors');
+  group.runEl = group.el.querySelector('.tc-group-running');
+  group.agentEl = group.el.querySelector('.tc-group-agent');
+  group.el.querySelector('.tc-group-head').addEventListener('click', () => {
+    group.el.classList.toggle('collapsed');
+  });
+
+  activeToolGroup = group;
+  updateToolGroup(group, ev);
+  push(group.el);
+  return group;
+}
+
+function updateToolGroup(group, ev) {
+  const agent = ev && (ev.agent_role || ev.agent_node);
+  if (agent) group.agents.add(agent);
+
+  const label = group.count === 1 ? '1 llamada' : group.count + ' llamadas';
+  group.countEl.textContent = label;
+
+  if (group.errors > 0) {
+    group.el.classList.add('has-errors');
+    group.errEl.classList.remove('hidden');
+    group.errEl.textContent = group.errors === 1 ? '1 error' : group.errors + ' errores';
+  } else {
+    group.el.classList.remove('has-errors');
+    group.errEl.classList.add('hidden');
+  }
+
+  if (group.running > 0) {
+    group.runEl.classList.remove('hidden');
+  } else {
+    group.runEl.classList.add('hidden');
+  }
+
+  if (group.agents.size === 1) {
+    group.agentEl.textContent = Array.from(group.agents)[0];
+  } else if (group.agents.size > 1) {
+    group.agentEl.textContent = 'Varios agentes';
+  } else {
+    group.agentEl.textContent = '';
+  }
+}
+
+function appendToolCardToGroup(group, card, ev) {
+  group.body.appendChild(card);
+  updateToolGroup(group, ev);
+}
+
 // ── Tool approval cards ────────────────────────────────────────────────
 function buildApprovalCard(ev) {
   const card = document.createElement('div');
@@ -637,43 +723,51 @@ async function submitComment(text, div) {
 // ── Event rendering ────────────────────────────────────────────────────
 function renderEvent(ev) {
   if (ev.type === 'agent_turn_started') {
+    closeToolGroup();
     ensureLiveAgent(ev.agent_node, ev.agent_role);
     return;
   }
 
   if (ev.type === 'agent_delta') {
+    closeToolGroup();
     appendLiveDelta(ev);
     return;
   }
 
   if (ev.type === 'tool_call_started') {
+    const group = ensureToolGroup(ev);
     const card = buildRunningToolCard(ev);
     if (ev.call_id) toolCards[ev.call_id] = card;
-    const wrapper = document.createElement('div');
-    wrapper.className = 'tc-wrapper';
-    wrapper.appendChild(card);
-    thread.insertBefore(wrapper, typing);
+    if (ev.call_id) toolCardGroups[ev.call_id] = group;
+    group.count += 1;
+    group.running += 1;
+    appendToolCardToGroup(group, card, ev);
     scrollBottom(true);
     return;
   }
 
   if (ev.type === 'tool_call') {
     const running = ev.call_id ? toolCards[ev.call_id] : null;
+    const group = (ev.call_id && toolCardGroups[ev.call_id]) || ensureToolGroup(ev);
     const card = buildToolCallCard(ev);
     if (running) {
       // Update the "ejecutando…" card in place, keeping its expanded state.
       if (running.classList.contains('open')) card.classList.add('open');
       running.replaceWith(card);
+      group.running = Math.max(0, group.running - 1);
       delete toolCards[ev.call_id];
+      delete toolCardGroups[ev.call_id];
     } else {
-      const wrapper = document.createElement('div');
-      wrapper.className = 'tc-wrapper';
-      wrapper.appendChild(card);
-      thread.insertBefore(wrapper, typing);
+      group.count += 1;
+      appendToolCardToGroup(group, card, ev);
     }
+    if (ev.error) group.errors += 1;
+    updateToolGroup(group, ev);
     scrollBottom();
     return;
   }
+
+  closeToolGroup();
 
   if (ev.type === 'tool_approval_request') {
     push(buildApprovalCard(ev));

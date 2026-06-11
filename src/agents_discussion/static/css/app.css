@@ -441,6 +441,44 @@ details.adv > summary::-webkit-details-marker { display: none; }
 }
 .tc-wrapper { margin: 6px 15px 0; flex-shrink: 0; }
 
+/* Group of consecutive tool calls — keeps long ReAct loops visually compact */
+.tc-group {
+  border: 1px solid var(--border); border-left: 2px solid var(--muted);
+  margin: 6px 15px 8px; font-size: 12.5px;
+  background: var(--s1); flex-shrink: 0;
+  animation: fadeUp .4s ease;
+}
+.tc-group.has-errors { border-left-color: var(--err); }
+.tc-group-head {
+  display: flex; align-items: center; gap: 8px;
+  padding: 8px 12px; cursor: pointer; user-select: none;
+}
+.tc-group-ico { color: var(--dim); display: flex; align-items: center; }
+.tc-group-title {
+  font-size: 11px; font-weight: 400;
+  text-transform: uppercase; letter-spacing: .08em;
+  color: var(--text); flex: 1;
+}
+.tc-group-count,
+.tc-group-errors,
+.tc-group-running {
+  font-size: 10px; color: var(--muted);
+  padding: 1px 6px; border: 1px solid var(--border);
+  letter-spacing: .05em; white-space: nowrap;
+}
+.tc-group-errors { color: var(--err); border-color: currentColor; }
+.tc-group-running { font-style: italic; }
+.tc-group-agent { font-size: 11px; color: var(--dim); }
+.tc-group-arrow { color: var(--muted); transition: transform .2s; font-size: 11px; }
+.tc-group:not(.collapsed) .tc-group-arrow { transform: rotate(90deg); }
+.tc-group-body {
+  display: flex; flex-direction: column;
+  gap: 4px; padding: 0 10px 10px;
+  border-top: 1px solid var(--border);
+}
+.tc-group.collapsed .tc-group-body { display: none; }
+.tc-group .tc-card { margin: 8px 0 0; background: var(--bg); }
+
 /* Running tool card — shown between tool_call_started and its result */
 .tc-card.tc-running { border-left-style: dashed; }
 .tc-spin {
