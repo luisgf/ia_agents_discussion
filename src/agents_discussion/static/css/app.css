@@ -339,6 +339,28 @@ details.adv > summary::-webkit-details-marker { display: none; }
   font-style: italic;
 }
 
+/* Chain-of-thought block — thinking tokens streamed by reasoning models */
+.think-box {
+  border: 1px dashed var(--border);
+  background: var(--s1);
+  margin: 0 0 10px;
+}
+.think-box summary {
+  cursor: pointer; user-select: none;
+  padding: 7px 12px;
+  font-size: 10px; font-weight: 400;
+  text-transform: uppercase; letter-spacing: .1em;
+  color: var(--muted);
+}
+.think-box summary:hover { color: var(--text); }
+.think-body {
+  padding: 4px 12px 10px;
+  font-size: 12.5px; font-style: italic;
+  color: var(--dim);
+  max-height: 260px; overflow-y: auto;
+}
+.think-body p { margin: 0 0 8px; }
+
 /* Streaming card — the agent's text arrives token by token */
 .acard.acard--streaming { border-style: dashed; }
 .acard.acard--streaming .card-body::after {

@@ -84,6 +84,40 @@ def _chunk_text(content: object) -> str:
     return ""
 
 
+_REASONING_PART_TYPES = ("thinking", "reasoning", "reasoning_content")
+
+
+def _chunk_reasoning_text(chunk: object) -> str:
+    """Extract reasoning/thinking deltas from a streamed chunk.
+
+    Providers expose reasoning in different places over OpenAI-compatible
+    endpoints, so every known location is checked:
+      - additional_kwargs["reasoning_content"]  (DeepSeek-R1 / Copilot style)
+      - additional_kwargs["reasoning"]          (str, or dict with text/content)
+      - content parts with type thinking/reasoning  (Anthropic style)
+    OpenAI o-series over Chat Completions never returns its chain of thought,
+    so for those models this always yields "".
+    """
+    parts: list[str] = []
+    extra = getattr(chunk, "additional_kwargs", None) or {}
+    for key in ("reasoning_content", "reasoning"):
+        value = extra.get(key)
+        if isinstance(value, str):
+            parts.append(value)
+        elif isinstance(value, dict):
+            text = value.get("text") or value.get("content")
+            if isinstance(text, str):
+                parts.append(text)
+    content = getattr(chunk, "content", None)
+    if isinstance(content, list):
+        for part in content:
+            if isinstance(part, dict) and part.get("type") in _REASONING_PART_TYPES:
+                text = part.get("thinking") or part.get("reasoning") or part.get("text") or ""
+                if isinstance(text, str):
+                    parts.append(text)
+    return "".join(parts)
+
+
 def _invoke_streaming(model, messages: list, control, agent_node: str, agent_role: str):
     """Invoke model with streaming to UI. Falls back to blocking invoke."""
     if control is None:
@@ -95,10 +129,20 @@ def _invoke_streaming(model, messages: list, control, agent_node: str, agent_rol
         "agent_role": agent_role,
     })
     response = None
+    reasoning_parts: list[str] = []
     try:
         for chunk in model.stream(messages):
             control.raise_if_cancelled()
             response = chunk if response is None else response + chunk
+            thinking = _chunk_reasoning_text(chunk)
+            if thinking:
+                reasoning_parts.append(thinking)
+                control.emit({
+                    "type": "agent_reasoning_delta",
+                    "agent_node": agent_node,
+                    "agent_role": agent_role,
+                    "delta": thinking,
+                })
             delta = _chunk_text(chunk.content)
             if delta:
                 control.emit({
@@ -109,10 +153,22 @@ def _invoke_streaming(model, messages: list, control, agent_node: str, agent_rol
                 })
     except RunCancelled:
         raise
-    except Exception:
+    except Exception as exc:
         if response is not None:
             raise
+        _log.warning(
+            "streaming failed for %s (%s), falling back to blocking invoke "
+            "— no live deltas for this turn", agent_node, exc,
+        )
         return model.invoke(messages)
+    if reasoning_parts:
+        # Persisted (non-ephemeral) so stored runs can replay the reasoning.
+        control.emit({
+            "type": "agent_thinking",
+            "agent_node": agent_node,
+            "agent_role": agent_role,
+            "content": "".join(reasoning_parts),
+        })
     if response is None:
         return model.invoke(messages)
     return response

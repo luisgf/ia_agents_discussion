@@ -441,6 +441,8 @@ The frontend groups consecutive tool calls into a collapsible **Tool Group** car
 | `run_started` | `stream_debate_events` | Initial metadata |
 | `agent_turn_started` | `_invoke_streaming` | Streaming begins |
 | `agent_delta` | `_invoke_streaming` | Token chunk |
+| `agent_reasoning_delta` | `_invoke_streaming` | Thinking-token chunk (reasoning models) |
+| `agent_thinking` | `_invoke_streaming` | Full chain of thought for one LLM iteration (persisted) |
 | `agent_reasoning` | `_run_with_tools` | Text before tool calls |
 | `agent_completed` | `stream_debate_events` | Final agent text |
 | `agent_skipped` | `stream_debate_events` | Node was bypassed |

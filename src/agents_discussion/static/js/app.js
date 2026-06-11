@@ -236,6 +236,29 @@ function buildAgentCard(event) {
   return el;
 }
 
+// Static card with the model's chain of thought, used when replaying a
+// stored run (live runs render it inside the streaming card instead).
+function buildThinkingCard(event) {
+  const cfg = AGENT_CFG[event.agent_node] || { cls: 'a-diag', ico: ICO.diag };
+  const el = document.createElement('article');
+  el.className = 'acard acard--reasoning ' + cfg.cls;
+  el.innerHTML =
+    '<div class="acard-head">' +
+      '<div class="agent-id">' +
+        '<div class="agent-ico">' + cfg.ico + '</div>' +
+        '<div><span class="agent-nm">' + esc(event.agent_role) + '</span>' +
+             '<span class="agent-sub agent-sub--reasoning">Razonamiento del modelo</span></div>' +
+      '</div>' +
+      CHEVRON +
+    '</div>' +
+    '<div class="card-body">' +
+      '<details class="think-box"><summary>Razonamiento del modelo</summary>' +
+      '<div class="think-body">' + md(event.content) + '</div></details>' +
+    '</div>';
+  el.querySelector('.acard-head').addEventListener('click', () => el.classList.toggle('collapsed'));
+  return el;
+}
+
 function buildReasoningCard(event) {
   const cfg = AGENT_CFG[event.agent_node] || { cls: 'a-diag', ico: ICO.diag };
   const el = document.createElement('article');
@@ -257,6 +280,15 @@ function buildReasoningCard(event) {
 // ── Live streaming agent card ──────────────────────────────────────────
 // Created on agent_turn_started, fed token deltas by agent_delta, and frozen
 // in place by the turn's closing event (agent_reasoning / agent_completed).
+// Collapsible block holding the model's chain of thought (thinking tokens).
+// `open` while streaming so the operator sees it live; collapsed once frozen.
+function thinkHTML(live, open) {
+  if (!live.thinkBuffer.trim()) return '';
+  return '<details class="think-box"' + (open ? ' open' : '') + '>' +
+    '<summary>Razonamiento del modelo</summary>' +
+    '<div class="think-body">' + md(live.thinkBuffer) + '</div></details>';
+}
+
 function ensureLiveAgent(node, role) {
   // Reutilizar tarjeta del mismo nodo (reactivar si está congelada por reasoning)
   if (liveAgent && liveAgent.node === node) {
@@ -267,9 +299,15 @@ function ensureLiveAgent(node, role) {
       sub.classList.remove('agent-sub--reasoning');
       sub.classList.add('agent-sub--live');
       sub.textContent = 'Razonando en tiempo real…';
+    } else if (liveAgent.thinkBuffer.trim()) {
+      // Mid-stream restart (tool call without visible text): keep the
+      // thinking already shown by folding it into the frozen HTML.
+      liveAgent.frozenHTML += thinkHTML(liveAgent, false);
+      liveAgent.body.innerHTML = liveAgent.frozenHTML;
     }
-    // Reset buffer for a new LLM streaming iteration (same agent, new round of ReAct)
+    // Reset buffers for a new LLM streaming iteration (same agent, new round of ReAct)
     liveAgent.buffer = '';
+    liveAgent.thinkBuffer = '';
     if (liveAgent.timer) { clearTimeout(liveAgent.timer); liveAgent.timer = null; }
     return liveAgent;
   }
@@ -288,24 +326,33 @@ function ensureLiveAgent(node, role) {
     '</div>' +
     '<div class="card-body"></div>';
   el.querySelector('.acard-head').addEventListener('click', () => el.classList.toggle('collapsed'));
-  liveAgent = { el, body: el.querySelector('.card-body'), buffer: '', node, role, timer: null, frozenHTML: '' };
+  liveAgent = { el, body: el.querySelector('.card-body'), buffer: '', thinkBuffer: '', node, role, timer: null, frozenHTML: '' };
   hideTyping();
   push(el);
   return liveAgent;
 }
 
+// Throttle markdown re-rendering: deltas arrive far faster than 8 fps.
+function renderLive(live) {
+  if (live.timer) return;
+  live.timer = setTimeout(() => {
+    live.timer = null;
+    // Preserve frozen content (e.g., prior reasoning) while appending fresh deltas
+    live.body.innerHTML = live.frozenHTML + thinkHTML(live, true) + md(live.buffer);
+    scrollBottom();
+  }, 120);
+}
+
 function appendLiveDelta(ev) {
   const live = ensureLiveAgent(ev.agent_node, ev.agent_role);
   live.buffer += ev.delta || '';
-  // Throttle markdown re-rendering: deltas arrive far faster than 8 fps.
-  if (!live.timer) {
-    live.timer = setTimeout(() => {
-      live.timer = null;
-      // Preserve frozen content (e.g., prior reasoning) while appending fresh deltas
-      live.body.innerHTML = live.frozenHTML + md(live.buffer);
-      scrollBottom();
-    }, 120);
-  }
+  renderLive(live);
+}
+
+function appendLiveThinking(ev) {
+  const live = ensureLiveAgent(ev.agent_node, ev.agent_role);
+  live.thinkBuffer += ev.delta || '';
+  renderLive(live);
 }
 
 // Freeze the streaming card with its definitive content.
@@ -321,16 +368,25 @@ function finalizeLiveAgent(content, kind, subtitle) {
   // iteración LLM dentro del mismo ciclo ReAct.
   if (!kind || kind === 'final') {
     liveAgent = null;
-  } else if (kind === 'reasoning') {
-    // Snapshot the frozen HTML so subsequent deltas are appended, not overwritten
-    live.frozenHTML = live.body.innerHTML;
   }
   if (live.timer) clearTimeout(live.timer);
   const text = content != null ? content : live.buffer;
-  if (!String(text).trim()) { live.el.remove(); return true; }
+  if (!String(text).trim() && !live.thinkBuffer.trim() && !live.frozenHTML) {
+    live.el.remove();
+    return true;
+  }
   live.el.classList.remove('acard--streaming');
-  if (kind === 'reasoning') live.el.classList.add('acard--reasoning');
-  live.body.innerHTML = md(text);
+  if (kind === 'reasoning') {
+    live.el.classList.add('acard--reasoning');
+    // Accumulate so subsequent ReAct iterations append instead of overwriting
+    live.body.innerHTML = live.frozenHTML + thinkHTML(live, false) + md(text);
+    live.frozenHTML = live.body.innerHTML;
+    live.buffer = '';
+    live.thinkBuffer = '';
+  } else {
+    // Definitive freeze: show the final answer (plus its thinking, collapsed)
+    live.body.innerHTML = thinkHTML(live, false) + md(text);
+  }
   const sub = live.el.querySelector('.agent-sub');
   sub.classList.remove('agent-sub--live');
   if (kind === 'reasoning') {
@@ -753,6 +809,18 @@ function renderEvent(ev) {
 
   if (ev.type === 'agent_delta') {
     appendLiveDelta(ev);
+    return;
+  }
+
+  if (ev.type === 'agent_reasoning_delta') {
+    appendLiveThinking(ev);
+    return;
+  }
+
+  if (ev.type === 'agent_thinking') {
+    // Live run: the streaming card already shows it via deltas.
+    // Stored replay (no live card): build a static collapsed card.
+    if (!(liveAgent && liveAgent.node === ev.agent_node)) push(buildThinkingCard(ev));
     return;
   }
 
