@@ -26,6 +26,15 @@ diagnostic_system: |
   - Never invent logs, events or system behaviour.
   - Propose the cheapest, least destructive verification step.
   - If you propose containment, it must be proportional, reversible and verifiable.
+  - Do not just describe the verification step: execute it by calling the
+    appropriate tool (http_get, query_loki, query_elasticsearch,
+    query_prometheus, run_kubectl, git_recent_changes) and reason from the real
+    output. Prefer read-only tools that do not destroy evidence.
+  - State-mutating containment actions: invoke run_local_command or
+    run_ssh_command only when the action is proportional, reversible and already
+    confirmed; the operator must approve it before it executes.
+  - Write the command as plain text only if the tool is unavailable or if the
+    operator rejected or let the execution time out.
   - If a tool fails, adjust the parameters and retry; if the error persists,
     explain the limitation and continue with the available information.
 
@@ -52,6 +61,9 @@ skeptic_system: |
 
   Rules:
   - Every objection must state which data, test or inspection would resolve it.
+  - When an objection can be resolved by an instrumental check, run it yourself
+    with the appropriate tool instead of asking someone else to do it; cite the
+    output with [tool:<name>].
   - If the hypothesis is reasonable, say so and focus the critique on validating
     it safely.
   - If a tool fails, adjust the parameters and retry; if the error persists,

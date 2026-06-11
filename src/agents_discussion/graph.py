@@ -1,5 +1,7 @@
 import json
 import re
+import time
+import uuid
 
 from langchain_core.messages import HumanMessage, SystemMessage, ToolMessage
 from langgraph.graph import END, START, StateGraph
@@ -15,7 +17,7 @@ from agents_discussion.prompts import (
     rebuttal_prompt,
     skeptic_prompt,
 )
-from agents_discussion.runtime import get_control
+from agents_discussion.runtime import RunCancelled, get_control
 from agents_discussion.state import DebateMessage, DebateState, ModeratorDecision, ToolCallEntry
 from agents_discussion.tools import get_tools
 
@@ -36,6 +38,65 @@ def _message_content(response: object) -> str:
 
 def _template_for(state: DebateState) -> PromptTemplate:
     return get_template(state.get("template", ""), state.get("language", ""))
+
+
+def _chunk_text(content: object) -> str:
+    """Extract the plain-text part of a streamed chunk's content.
+
+    Content may be a string (OpenAI-style) or a list of content blocks
+    (e.g. [{"type": "text", "text": "..."}]) depending on the provider.
+    """
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        parts = []
+        for part in content:
+            if isinstance(part, str):
+                parts.append(part)
+            elif isinstance(part, dict) and part.get("type") in (None, "text"):
+                parts.append(part.get("text", ""))
+        return "".join(parts)
+    return ""
+
+
+def _invoke_streaming(model, messages: list, control, agent_node: str, agent_role: str):
+    """Invoke the model streaming token deltas to the UI via control.emit.
+
+    Emits agent_turn_started once, then one agent_delta per text chunk, and
+    returns the aggregated response message (tool calls included). Falls back
+    to a blocking invoke when the endpoint rejects streaming before producing
+    any chunk. CLI runs (control is None) always use the blocking path.
+    """
+    if control is None:
+        return model.invoke(messages)
+
+    control.emit({
+        "type": "agent_turn_started",
+        "agent_node": agent_node,
+        "agent_role": agent_role,
+    })
+    response = None
+    try:
+        for chunk in model.stream(messages):
+            control.raise_if_cancelled()
+            response = chunk if response is None else response + chunk
+            delta = _chunk_text(chunk.content)
+            if delta:
+                control.emit({
+                    "type": "agent_delta",
+                    "agent_node": agent_node,
+                    "agent_role": agent_role,
+                    "delta": delta,
+                })
+    except RunCancelled:
+        raise
+    except Exception:  # noqa: BLE001 — endpoint without streaming support
+        if response is not None:
+            raise  # failed mid-stream: re-invoking would duplicate the turn
+        return model.invoke(messages)
+    if response is None:
+        return model.invoke(messages)
+    return response
 
 
 # ── ReAct loop ───────────────────────────────────────────────────────────────
@@ -76,12 +137,24 @@ def _run_with_tools(
         if control is not None:
             control.raise_if_cancelled()
 
-        response = model.invoke(messages)
+        response = _invoke_streaming(model, messages, control, agent_node, agent_role)
         messages.append(response)
 
         raw_calls = getattr(response, "tool_calls", None) or []
         if not raw_calls:
             break  # LLM gave a final answer — exit loop
+
+        # Emit the reasoning text this turn produced BEFORE the tool calls so
+        # the UI shows: reasoning → tool(s) → reasoning → tool(s) → … → final.
+        # Only emit when there is actual text content (some models return "" here).
+        reasoning_text = _message_content(response)
+        if control is not None and reasoning_text.strip():
+            control.emit({
+                "type": "agent_reasoning",
+                "agent_node": agent_node,
+                "agent_role": agent_role,
+                "content": reasoning_text,
+            })
 
         batch_had_error = False
         for tc in raw_calls:
@@ -97,6 +170,29 @@ def _run_with_tools(
             tool_name: str = tc["name"]
             tool_args: dict = tc["args"]
             call_id: str = tc["id"]
+            # UI correlation id: tool_call_started and tool_call share it so the
+            # frontend can update the running card in place with the result.
+            exec_id = uuid.uuid4().hex[:12]
+            duration_ms: int | None = None
+
+            def _execute(tool_fn) -> tuple[str, bool]:
+                nonlocal duration_ms
+                if control is not None:
+                    control.emit({
+                        "type": "tool_call_started",
+                        "call_id": exec_id,
+                        "agent_node": agent_node,
+                        "agent_role": agent_role,
+                        "tool_name": tool_name,
+                        "args": tool_args,
+                    })
+                started = time.monotonic()
+                try:
+                    return str(tool_fn.invoke(tool_args)), False
+                except Exception as exc:  # noqa: BLE001
+                    return f"Tool error: {exc}", True
+                finally:
+                    duration_ms = int((time.monotonic() - started) * 1000)
 
             tool_fn = tool_map.get(tool_name)
             approval = "auto"
@@ -106,12 +202,7 @@ def _run_with_tools(
             elif control is not None and control.needs_approval(tool_name):
                 approved, approval = control.request_approval(tool_name, tool_args, agent_role)
                 if approved:
-                    try:
-                        result = str(tool_fn.invoke(tool_args))
-                        error = False
-                    except Exception as exc:  # noqa: BLE001
-                        result = f"Tool error: {exc}"
-                        error = True
+                    result, error = _execute(tool_fn)
                 else:
                     result = (
                         "El operador no aprobó esta llamada "
@@ -121,24 +212,35 @@ def _run_with_tools(
                     )
                     error = False
             else:
-                try:
-                    result = str(tool_fn.invoke(tool_args))
-                    error = False
-                except Exception as exc:  # noqa: BLE001
-                    result = f"Tool error: {exc}"
-                    error = True
+                result, error = _execute(tool_fn)
 
             audit_tool_call(run_id, agent_node, tool_name, tool_args, result, error, approval)
-            tool_log.append(
-                ToolCallEntry(
-                    agent=agent_node,
-                    tool_name=tool_name,
-                    args=tool_args,
-                    result=result,
-                    error=error,
-                    approval=approval,
-                )
+            entry = ToolCallEntry(
+                agent=agent_node,
+                tool_name=tool_name,
+                args=tool_args,
+                result=result,
+                error=error,
+                approval=approval,
             )
+            tool_log.append(entry)
+            # Emit the tool_call event in real time so the UI shows it
+            # immediately after execution, before the agent's next LLM call.
+            # RunControl.emit is thread-safe (web.py: RunSession.publish uses a lock).
+            # CLI runs (control is None) don't use SSE so no emit is needed there.
+            if control is not None:
+                control.emit({
+                    "type": "tool_call",
+                    "call_id": exec_id,
+                    "agent_node": agent_node,
+                    "agent_role": agent_role,
+                    "tool_name": tool_name,
+                    "args": tool_args,
+                    "result": result,
+                    "error": error,
+                    "approval": approval,
+                    "duration_ms": duration_ms,
+                })
             messages.append(ToolMessage(content=result, tool_call_id=call_id))
             if error:
                 batch_had_error = True
@@ -484,18 +586,10 @@ def stream_debate_events(
         for node_name, node_update in update.items():
             if not node_update:
                 continue
-            # ── Tool calls produced by this node (emitted before the response) ──
-            for tc in node_update.get("tool_calls_log") or []:
-                yield {
-                    "type": "tool_call",
-                    "agent_node": tc["agent"],
-                    "agent_role": AGENT_EVENT_FIELDS.get(tc["agent"], ("", tc["agent"]))[1],
-                    "tool_name": tc["tool_name"],
-                    "args": tc["args"],
-                    "result": tc["result"],
-                    "error": tc["error"],
-                    "approval": tc.get("approval", "auto"),
-                }
+            # ── Tool calls are emitted in real time from _run_with_tools via
+            # control.emit, right after each tool actually executes. The
+            # tool_calls_log is still kept in state for persistence and replay,
+            # but we no longer re-emit it here to avoid duplicates.
 
             # ── Agent text response ──
             if node_name in AGENT_EVENT_FIELDS:

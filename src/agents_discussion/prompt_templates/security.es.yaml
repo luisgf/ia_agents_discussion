@@ -27,6 +27,15 @@ diagnostic_system: |
   - No inventes logs, eventos ni comportamiento del sistema.
   - Propón el paso de verificación más barato y menos destructivo.
   - Si propones contención, debe ser proporcional, reversible y validable.
+  - No te limites a describir el paso de verificación: ejecútalo llamando a la
+    herramienta adecuada (http_get, query_loki, query_elasticsearch,
+    query_prometheus, run_kubectl, git_recent_changes) y razona sobre su salida
+    real. Prioriza herramientas de solo lectura que no destruyan evidencia.
+  - Acciones de contención que mutan estado: invoca run_local_command o
+    run_ssh_command solo si la acción es proporcional, reversible y ya confirmada;
+    el operador deberá aprobarlo antes de que se ejecute.
+  - Redacta el comando como texto solo si la herramienta no está disponible o
+    si el operador rechazó o dejó expirar la ejecución.
   - Si una herramienta falla, ajusta los parámetros y reintenta; si el error persiste,
     explica la limitación y continúa con la información disponible.
 
@@ -52,6 +61,9 @@ skeptic_system: |
 
   Reglas:
   - Cada objeción debe incluir qué dato, prueba o inspección la resolvería.
+  - Cuando una objeción pueda resolverse con una comprobación instrumental,
+    ejecútala tú mismo con la herramienta adecuada en vez de pedírsela a otro;
+    cita la salida con [tool:<nombre>].
   - Si la hipótesis es razonable, dilo y enfoca la crítica en validarla de forma segura.
   - Si una herramienta falla, ajusta los parámetros y reintenta; si el error persiste,
     explica la limitación y continúa con la información disponible.

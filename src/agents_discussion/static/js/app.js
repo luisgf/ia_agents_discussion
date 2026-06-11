@@ -50,6 +50,8 @@ let activeTab     = 'debate';
 let defaultApproval = true;
 const apprCards   = {};     // call_id → approval card element
 let hitlBanner    = null;   // active HITL banner element
+let liveAgent     = null;   // streaming agent card: { el, body, buffer, node, role, timer }
+const toolCards   = {};     // call_id → running tool-call card (awaiting result)
 
 // ── DOM ────────────────────────────────────────────────────────────────
 const form        = document.getElementById('run-form');
@@ -97,13 +99,24 @@ function showTyping(label) {
 }
 function hideTyping() { typing.classList.add('hidden'); }
 
-function scrollBottom() { thread.scrollTop = thread.scrollHeight; }
+// Auto-scroll only when the user is already near the bottom, so reading
+// earlier cards isn't interrupted by streaming deltas. force=true overrides
+// (used when a brand-new card is pushed).
+function scrollBottom(force = false) {
+  const near = thread.scrollHeight - thread.scrollTop - thread.clientHeight < 220;
+  if (force || near) thread.scrollTop = thread.scrollHeight;
+}
+
+function fmtDuration(ms) {
+  if (ms == null) return '';
+  return ms < 1000 ? ms + ' ms' : (ms / 1000).toFixed(1) + ' s';
+}
 
 function push(el) {
   el.classList.add('fresh');
   thread.insertBefore(el, typing);
   setTimeout(() => el.classList.remove('fresh'), 1500);
-  scrollBottom();
+  scrollBottom(true);
 }
 
 function clearThread() {
@@ -113,6 +126,9 @@ function clearThread() {
   emptyState.classList.remove('hidden');
   hideTyping();
   Object.keys(apprCards).forEach(k => delete apprCards[k]);
+  Object.keys(toolCards).forEach(k => delete toolCards[k]);
+  if (liveAgent && liveAgent.timer) clearTimeout(liveAgent.timer);
+  liveAgent = null;
   hitlBanner = null;
   hidePostRunActions();
   hideResumePanel();
@@ -217,6 +233,88 @@ function buildAgentCard(event) {
   return el;
 }
 
+function buildReasoningCard(event) {
+  const cfg = AGENT_CFG[event.agent_node] || { cls: 'a-diag', ico: ICO.diag };
+  const el = document.createElement('article');
+  el.className = 'acard acard--reasoning ' + cfg.cls;
+  el.innerHTML =
+    '<div class="acard-head">' +
+      '<div class="agent-id">' +
+        '<div class="agent-ico">' + cfg.ico + '</div>' +
+        '<div><span class="agent-nm">' + esc(event.agent_role) + '</span>' +
+             '<span class="agent-sub agent-sub--reasoning">Razonamiento</span></div>' +
+      '</div>' +
+      CHEVRON +
+    '</div>' +
+    '<div class="card-body">' + md(event.content) + '</div>';
+  el.querySelector('.acard-head').addEventListener('click', () => el.classList.toggle('collapsed'));
+  return el;
+}
+
+// ── Live streaming agent card ──────────────────────────────────────────
+// Created on agent_turn_started, fed token deltas by agent_delta, and frozen
+// in place by the turn's closing event (agent_reasoning / agent_completed).
+function ensureLiveAgent(node, role) {
+  if (liveAgent && liveAgent.node === node) return liveAgent;
+  finalizeLiveAgent();  // a previous live card was left open: freeze it as-is
+  const cfg = AGENT_CFG[node] || { cls: 'a-diag', ico: ICO.diag };
+  const el = document.createElement('article');
+  el.className = 'acard acard--streaming ' + cfg.cls;
+  el.innerHTML =
+    '<div class="acard-head">' +
+      '<div class="agent-id">' +
+        '<div class="agent-ico">' + cfg.ico + '</div>' +
+        '<div><span class="agent-nm">' + esc(role) + '</span>' +
+             '<span class="agent-sub agent-sub--live">Razonando en tiempo real&hellip;</span></div>' +
+      '</div>' +
+      CHEVRON +
+    '</div>' +
+    '<div class="card-body"></div>';
+  el.querySelector('.acard-head').addEventListener('click', () => el.classList.toggle('collapsed'));
+  liveAgent = { el, body: el.querySelector('.card-body'), buffer: '', node, role, timer: null };
+  hideTyping();
+  push(el);
+  return liveAgent;
+}
+
+function appendLiveDelta(ev) {
+  const live = ensureLiveAgent(ev.agent_node, ev.agent_role);
+  live.buffer += ev.delta || '';
+  // Throttle markdown re-rendering: deltas arrive far faster than 8 fps.
+  if (!live.timer) {
+    live.timer = setTimeout(() => {
+      live.timer = null;
+      live.body.innerHTML = md(live.buffer);
+      scrollBottom();
+    }, 120);
+  }
+}
+
+// Freeze the streaming card with its definitive content.
+// kind: 'reasoning' | 'final'. Returns false when there is no live card
+// (e.g. replaying a stored run), so the caller builds a static card instead.
+function finalizeLiveAgent(content, kind, subtitle) {
+  if (!liveAgent) return false;
+  const live = liveAgent;
+  liveAgent = null;
+  if (live.timer) clearTimeout(live.timer);
+  const text = content != null ? content : live.buffer;
+  if (!String(text).trim()) { live.el.remove(); return true; }
+  live.el.classList.remove('acard--streaming');
+  if (kind === 'reasoning') live.el.classList.add('acard--reasoning');
+  live.body.innerHTML = md(text);
+  const sub = live.el.querySelector('.agent-sub');
+  sub.classList.remove('agent-sub--live');
+  if (kind === 'reasoning') {
+    sub.classList.add('agent-sub--reasoning');
+    sub.textContent = 'Razonamiento';
+  } else {
+    sub.textContent = subtitle || ('Ronda ' + curRound);
+  }
+  scrollBottom();
+  return true;
+}
+
 function buildUserCard(content) {
   const el = document.createElement('article');
   el.className = 'acard a-user';
@@ -238,7 +336,7 @@ function buildModCard(decision, round) {
   lastDecision = decision;
   const st  = STATUS_CFG[decision.status] || { lbl: decision.status, cls: 'db-structured_uncertainty' };
   const pct = Math.round((decision.confidence || 0) * 100);
-  const barColor = pct >= 80 ? '#10b981' : pct >= 50 ? '#f59e0b' : '#f43f5e';
+  const barColor = '#1a1a1a';
   const rk  = RISK_CLS[decision.risk_level] || 'ru';
 
   const el = document.createElement('article');
@@ -381,24 +479,27 @@ function buildInfoCard(title, msg) {
   return el;
 }
 
+const TOOL_ICO = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg>';
+
 function buildToolCallCard(ev) {
   const isErr = !!ev.error;
   const card  = document.createElement('div');
   card.className = 'tc-card' + (isErr ? ' tc-err' : '');
 
-  const toolIco = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg>';
   const argsStr   = JSON.stringify(ev.args || {}, null, 2);
   const resultStr = String(ev.result || '');
   const ap = APPROVAL_LBL[ev.approval] || APPROVAL_LBL.auto;
   const apBadge = ev.approval && ev.approval !== 'auto'
     ? '<span class="tc-appr ' + ap[0] + '">' + ap[1] + '</span>' : '';
+  const dur = fmtDuration(ev.duration_ms);
+  const durBadge = dur ? '<span class="tc-dur">' + esc(dur) + '</span>' : '';
 
   card.innerHTML =
     '<div class="tc-head">' +
-      '<span class="tc-ico">' + toolIco + '</span>' +
+      '<span class="tc-ico">' + TOOL_ICO + '</span>' +
       '<span class="tc-name">' + esc(ev.tool_name) + '</span>' +
-      apBadge +
-      '<span style="font-size:11px;color:#64748b">' + esc(ev.agent_role || ev.agent_node) + '</span>' +
+      apBadge + durBadge +
+      '<span class="tc-agent">' + esc(ev.agent_role || ev.agent_node) + '</span>' +
       '<span class="tc-arrow">&#9654;</span>' +
     '</div>' +
     '<div class="tc-body">' +
@@ -412,6 +513,27 @@ function buildToolCallCard(ev) {
     card.classList.toggle('open');
   });
 
+  return card;
+}
+
+// Card shown the moment a tool starts executing (tool_call_started); the
+// matching tool_call event replaces it in place with the full result card.
+function buildRunningToolCard(ev) {
+  const card = document.createElement('div');
+  card.className = 'tc-card tc-running';
+  card.innerHTML =
+    '<div class="tc-head">' +
+      '<span class="tc-spin"></span>' +
+      '<span class="tc-name">' + esc(ev.tool_name) + '</span>' +
+      '<span class="tc-status">ejecutando&hellip;</span>' +
+      '<span class="tc-agent">' + esc(ev.agent_role || ev.agent_node) + '</span>' +
+      '<span class="tc-arrow">&#9654;</span>' +
+    '</div>' +
+    '<div class="tc-body">' +
+      '<div class="tc-section-lbl">Argumentos</div>' +
+      '<pre class="tc-pre">' + esc(JSON.stringify(ev.args || {}, null, 2)) + '</pre>' +
+    '</div>';
+  card.querySelector('.tc-head').addEventListener('click', () => card.classList.toggle('open'));
   return card;
 }
 
@@ -514,11 +636,41 @@ async function submitComment(text, div) {
 
 // ── Event rendering ────────────────────────────────────────────────────
 function renderEvent(ev) {
-  if (ev.type === 'tool_call') {
+  if (ev.type === 'agent_turn_started') {
+    ensureLiveAgent(ev.agent_node, ev.agent_role);
+    return;
+  }
+
+  if (ev.type === 'agent_delta') {
+    appendLiveDelta(ev);
+    return;
+  }
+
+  if (ev.type === 'tool_call_started') {
+    const card = buildRunningToolCard(ev);
+    if (ev.call_id) toolCards[ev.call_id] = card;
     const wrapper = document.createElement('div');
     wrapper.className = 'tc-wrapper';
-    wrapper.appendChild(buildToolCallCard(ev));
+    wrapper.appendChild(card);
     thread.insertBefore(wrapper, typing);
+    scrollBottom(true);
+    return;
+  }
+
+  if (ev.type === 'tool_call') {
+    const running = ev.call_id ? toolCards[ev.call_id] : null;
+    const card = buildToolCallCard(ev);
+    if (running) {
+      // Update the "ejecutando…" card in place, keeping its expanded state.
+      if (running.classList.contains('open')) card.classList.add('open');
+      running.replaceWith(card);
+      delete toolCards[ev.call_id];
+    } else {
+      const wrapper = document.createElement('div');
+      wrapper.className = 'tc-wrapper';
+      wrapper.appendChild(card);
+      thread.insertBefore(wrapper, typing);
+    }
     scrollBottom();
     return;
   }
@@ -584,8 +736,13 @@ function renderEvent(ev) {
     addRoundSep(1, maxRounds);
     if (isLive) showTyping('Diagnóstico Principal');
 
+  } else if (ev.type === 'agent_reasoning') {
+    // Live run: the streaming card already holds this text — freeze it.
+    // Stored replay (no live card): build the static reasoning card.
+    if (!finalizeLiveAgent(ev.content, 'reasoning')) push(buildReasoningCard(ev));
+
   } else if (ev.type === 'agent_completed') {
-    push(buildAgentCard(ev));
+    if (!finalizeLiveAgent(ev.content, 'final', 'Ronda ' + curRound)) push(buildAgentCard(ev));
     const next = NEXT_LABEL[ev.node];
     if (next && isLive) showTyping(next);
 
@@ -631,6 +788,7 @@ function renderEvent(ev) {
 }
 
 function finishLiveView() {
+  finalizeLiveAgent();  // freeze (or drop, if empty) an interrupted streaming card
   btn.disabled = false;
   hideStop();
   stopBtn.disabled = false;

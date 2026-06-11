@@ -16,8 +16,10 @@ _L = {
 1. Hipótesis principal.
 2. Observaciones que la soportan (cita las salidas de herramientas con [tool:<nombre>]).
 3. Inferencias y supuestos.
-4. Experimento mínimo para confirmarla o descartarla.
-5. Fix mínimo reversible si aplica.
+4. Experimento mínimo para confirmarla o descartarla — ejecútalo con la herramienta
+   adecuada y reporta la salida real ([tool:<nombre>]); no lo describas solo como texto.
+5. Fix mínimo reversible si aplica — si decides ejecutarlo, hazlo vía run_local_command
+   o run_ssh_command (requerirá aprobación del operador).
 6. Riesgos y validación.""",
         "skeptic_hypothesis": "Hipótesis/respuesta del diagnóstico principal:",
         "skeptic_deliver": """Entrega:
@@ -25,7 +27,8 @@ _L = {
 2. Causas alternativas plausibles.
 3. Evidencia faltante crítica.
 4. Riesgos del experimento o fix.
-5. Prueba concreta que resolvería cada objeción.""",
+5. Prueba concreta que resolvería cada objeción — ejecútala tú mismo con la herramienta
+   adecuada y reporta la salida ([tool:<nombre>]); no la delegues como sugerencia.""",
         "rebuttal_initial": "Tu hipótesis inicial:",
         "rebuttal_critique": "Crítica escéptica:",
         "rebuttal_deliver": """Entrega una contrarréplica técnica:
@@ -61,8 +64,10 @@ _L = {
 1. Leading hypothesis.
 2. Supporting observations (cite tool outputs with [tool:<name>]).
 3. Inferences and assumptions.
-4. Minimal experiment to confirm or discard it.
-5. Minimal reversible fix if applicable.
+4. Minimal experiment to confirm or discard it — run it with the appropriate tool
+   and report the real output ([tool:<name>]); do not just describe it as text.
+5. Minimal reversible fix if applicable — if you execute it, do so via
+   run_local_command or run_ssh_command (operator approval required).
 6. Risks and validation.""",
         "skeptic_hypothesis": "Leading diagnostic hypothesis/response:",
         "skeptic_deliver": """Deliver:
@@ -70,7 +75,9 @@ _L = {
 2. Plausible alternative causes.
 3. Critical missing evidence.
 4. Risks of the experiment or fix.
-5. Concrete test that would resolve each objection.""",
+5. Concrete test that would resolve each objection — run it yourself with the
+   appropriate tool and report the output ([tool:<name>]); do not defer it as
+   a suggestion.""",
         "rebuttal_initial": "Your initial hypothesis:",
         "rebuttal_critique": "Skeptical critique:",
         "rebuttal_deliver": """Deliver a technical rebuttal:

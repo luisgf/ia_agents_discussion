@@ -116,6 +116,12 @@ def _init_store() -> RunStore:
 
 # ── Run sessions (live runs) ──────────────────────────────────────────────────
 
+# Streaming-only events: needed by live SSE subscribers but redundant once the
+# run finishes (agent_reasoning/agent_completed/tool_call carry the final data),
+# so they are dropped when persisting the run record to disk.
+_EPHEMERAL_EVENTS = frozenset({"agent_turn_started", "agent_delta", "tool_call_started"})
+
+
 class RunSession:
     """In-memory state of a running debate. The debate executes in a worker
     thread (the graph is synchronous); SSE subscribers poll the event list."""
@@ -150,7 +156,7 @@ class RunSession:
                 **self.meta,
                 "status": self.status,
                 "context": self.context,
-                "events": list(self.events),
+                "events": [e for e in self.events if e.get("type") not in _EPHEMERAL_EVENTS],
             }
 
 
@@ -561,7 +567,7 @@ async def _live_stream(session: RunSession):
         elif time.monotonic() - last_beat > 15:
             yield ": keep-alive\n\n"
             last_beat = time.monotonic()
-        await asyncio.sleep(0.3)
+        await asyncio.sleep(0.15)
 
 
 async def _replay_stream(data: dict):
