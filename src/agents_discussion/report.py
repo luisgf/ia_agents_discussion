@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import re
 
 _STATUS_LABELS = {
     "running": "En curso",
@@ -65,6 +66,17 @@ def build_markdown_report(run: dict) -> str:
             lines.append(f"### {ev.get('role', ev.get('node', ''))}\n")
             lines.append(str(ev.get("content", "")).strip() + "\n")
 
+        elif etype == "agent_skipped":
+            lines.append(
+                f"### {ev.get('role', ev.get('node', ''))} — **OMITIDO**\n"
+            )
+            lines.append(f"*Razón:* {ev.get('rationale', 'Decisión del moderador')}\n")
+
+        elif etype == "history_compressed":
+            lines.append(
+                f"> 📦 *Resumen de rondas anteriores generado (ronda {ev.get('round', '—')}).*\n"
+            )
+
         elif etype == "tool_call":
             status = "ERROR" if ev.get("error") else ev.get("approval", "auto")
             lines.append(
@@ -89,6 +101,15 @@ def build_markdown_report(run: dict) -> str:
             lines.append(f"- **Estado:** {d.get('status', '—')}")
             lines.append(f"- **Confianza:** {round((d.get('confidence') or 0) * 100)}%")
             lines.append(f"- **Riesgo:** {d.get('risk_level', '—')}")
+            fd = d.get("flow_directive")
+            if fd:
+                lines.append(
+                    f"- **Flujo próxima ronda:** "
+                    f"skip_skeptic={fd.get('skip_skeptic', False)}, "
+                    f"skip_rebuttal={fd.get('skip_rebuttal', False)}"
+                )
+                if fd.get("rationale"):
+                    lines.append(f"  - *Razón:* {fd['rationale']}")
             if d.get("leading_hypothesis"):
                 lines.append(f"- **Hipótesis principal:** {d['leading_hypothesis']}")
             if d.get("next_step"):
@@ -120,14 +141,32 @@ def build_markdown_report(run: dict) -> str:
         elif etype == "run_cancelled":
             lines.append("### Debate detenido manualmente\n")
 
+    # Infer hypotheses from diagnostic agent completions if available
+    hypotheses: list[dict] = []
+    for ev in run.get("events") or []:
+        if ev.get("type") == "agent_completed" and ev.get("node") == "diagnostic_agent":
+            content = str(ev.get("content", ""))
+            # Extract HYPOTHESIS blocks
+            matches = re.finditer(
+                r"###\s*HYPOTHESIS-([A-Za-z0-9_-]+)\s*\n\s*Text:\s*(.+?)(?=\n###|\n##|\Z)",
+                content,
+                re.IGNORECASE | re.DOTALL,
+            )
+            for m in matches:
+                hypotheses.append({"id": m.group(1).strip(), "text": m.group(2).strip()})
+
     if final_decision:
         lines.append("---\n")
         lines.append("## Resumen ejecutivo\n")
         lines.append(f"- **Estado final:** {final_decision.get('status', '—')}")
         lines.append(f"- **Confianza:** {round((final_decision.get('confidence') or 0) * 100)}%")
         lines.append(f"- **Riesgo:** {final_decision.get('risk_level', '—')}")
+        if hypotheses:
+            lines.append("- **Hipótesis detectadas:**")
+            for hyp in hypotheses:
+                lines.append(f"  - `{hyp['id']}`: {hyp['text'][:120]}...")
         if final_decision.get("leading_hypothesis"):
-            lines.append(f"- **Hipótesis:** {final_decision['leading_hypothesis']}")
+            lines.append(f"- **Hipótesis principal:** {final_decision['leading_hypothesis']}")
         if final_decision.get("recommended_fix"):
             lines.append(f"- **Fix recomendado:** {final_decision['recommended_fix']}")
         if final_decision.get("next_step"):

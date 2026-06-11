@@ -178,6 +178,7 @@ def _run_debate_sync(session: RunSession) -> None:
             diagnostic_model=models.get("diagnostic", ""),
             skeptic_model=models.get("skeptic", ""),
             moderator_model=models.get("moderator", ""),
+            summary_model=models.get("summary", ""),
             run_id=session.run_id,
             template=session.meta.get("template", ""),
             language=session.meta.get("language", ""),
@@ -283,14 +284,17 @@ async def settings_api() -> JSONResponse:
             "diagnostic_model":      s.diagnostic_model,
             "skeptic_model":         s.skeptic_model,
             "moderator_model":       s.moderator_model,
+            "summary_model":         s.summary_model,
             "diagnostic_reasoning_effort": s.diagnostic_reasoning_effort,
             "skeptic_reasoning_effort":    s.skeptic_reasoning_effort,
             "moderator_reasoning_effort":  s.moderator_reasoning_effort,
             "max_rounds":            s.max_rounds,
             "confidence_threshold":  s.confidence_threshold,
+            "early_out_threshold":   s.early_out_threshold,
             "prompt_template":       s.prompt_template,
             "prompt_language":       s.prompt_language,
             "tool_approval_required": s.tool_approval_required,
+            "compress_history":      s.compress_history,
         })
     except Exception as exc:  # noqa: BLE001
         return JSONResponse({"error": str(exc)}, status_code=500)

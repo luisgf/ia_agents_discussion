@@ -35,6 +35,15 @@ class Settings(BaseSettings):
     max_rounds: int = Field(4, alias="MAX_ROUNDS", ge=1, le=10)
     confidence_threshold: float = Field(0.8, alias="CONFIDENCE_THRESHOLD", ge=0.0, le=1.0)
 
+    # ── History compression ─────────────────────────────────────────────
+    compress_history: bool = Field(True, alias="COMPRESS_HISTORY")
+    # Model used to compress history between rounds. Empty = uses moderator_model.
+    summary_model: str = Field("", alias="SUMMARY_MODEL")
+
+    # ── Early-out (skip debate rounds when evidence is conclusive) ─────
+    early_out_enabled: bool = Field(True, alias="EARLY_OUT_ENABLED")
+    early_out_threshold: float = Field(0.9, alias="EARLY_OUT_THRESHOLD", ge=0.0, le=1.0)
+
     # ── Prompt templates ─────────────────────────────────────────────────
     # Built-in templates ship with the package; admins can add/override
     # templates by dropping <name>.<lang>.yaml files into PROMPTS_DIR.

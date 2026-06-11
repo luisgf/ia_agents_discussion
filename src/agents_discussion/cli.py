@@ -71,6 +71,17 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Print every agent turn after the final result.",
     )
+    parser.add_argument(
+        "--no-compress-history",
+        action="store_true",
+        help="Disable history compression between rounds.",
+    )
+    parser.add_argument(
+        "--early-out-threshold",
+        type=float,
+        default=None,
+        help="Confidence threshold for early-out. Overrides EARLY_OUT_THRESHOLD env var.",
+    )
     return parser.parse_args()
 
 
@@ -150,6 +161,8 @@ def main() -> None:
                     f"Moderator model: {settings.moderator_model}",
                     f"Max rounds: {settings.max_rounds}",
                     f"Confidence threshold: {settings.confidence_threshold}",
+                    f"Early-out threshold: {settings.early_out_threshold}",
+                    f"Compress history: {'enabled' if not args.no_compress_history else 'disabled'}",
                     f"Base context files: {len(args.base_context)}",
                     f"Context redaction: {'enabled' if redact_context else 'disabled'}",
                     f"Project context: {'enabled' if args.project else 'disabled'}",
@@ -160,7 +173,12 @@ def main() -> None:
     )
 
     try:
-        result = run_debate(topic=topic, context=context)
+        result = run_debate(
+            topic=topic,
+            context=context,
+            compress_history=not args.no_compress_history,
+            early_out_threshold=args.early_out_threshold,
+        )
     except Exception as exc:
         console.print("[red]Debate execution failed.[/red]")
         console.print(str(exc))

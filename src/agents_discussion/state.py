@@ -19,6 +19,37 @@ class ToolCallEntry(TypedDict):
     approval: str    # auto | approved | rejected | timeout
 
 
+class Hypothesis(BaseModel):
+    """Structured hypothesis tracked across debate rounds."""
+
+    id: str = Field(description="Unique short id, e.g. H-1, H-2.")
+    text: str = Field(description="Text of the hypothesis.")
+    state: Literal["active", "rejected", "confirmed"] = Field(
+        default="active", description="Current state of the hypothesis.")
+    proposer: str = Field(description="Agent/node that proposed this hypothesis.")
+    round: int = Field(description="Round in which this hypothesis was proposed or last updated.")
+    supporting_evidence: list[str] = Field(default_factory=list)
+    rejected_reason: str | None = Field(default=None)
+
+
+class FlowDirective(TypedDict):
+    """Moderator instruction for the next round's flow."""
+
+    skip_skeptic: bool
+    skip_rebuttal: bool
+    rationale: str
+
+
+class DebateRound(TypedDict):
+    """Structured summary of a single debate round."""
+
+    round: int
+    diagnostic: str
+    skeptic: str
+    rebuttal: str
+    moderator: dict  # serialized ModeratorDecision
+
+
 def _append_list(current: list | None, new: list | None) -> list:
     return (current or []) + (new or [])
 
@@ -41,6 +72,9 @@ class ModeratorDecision(BaseModel):
     risk_level: Literal["low", "medium", "high"] = Field(description="Risk of the proposed next step or fix.")
     validation: list[str] = Field(default_factory=list, description="How to verify the diagnosis or fix.")
     stop_reason: str | None = Field(default=None, description="Reason to stop, if not continuing.")
+    flow_directive: FlowDirective | None = Field(
+        default=None,
+        description="If set, controls which agents execute in the next round.")
 
 
 def append_messages(
@@ -56,6 +90,7 @@ class DebateState(TypedDict):
     round: int
     max_rounds: int
     confidence_threshold: float
+    early_out_threshold: float
     diagnostic_response: str
     skeptic_response: str
     diagnostic_rebuttal: str
@@ -63,10 +98,21 @@ class DebateState(TypedDict):
     history: Annotated[list[DebateMessage], append_messages]
     tool_calls_log: Annotated[list[ToolCallEntry], _append_list]
     final_result: str | None
+    # Structured hypotheses tracked across rounds
+    hypotheses: Annotated[list[Hypothesis], _append_list]
+    # Compressed history summary for rounds > 2
+    history_summary: str
+    # Per-round structured log (useful for reports and summaries)
+    round_log: Annotated[list[DebateRound], _append_list]
+    # Early-out signal from diagnostic agent
+    early_out_recommended: bool
+    early_out_confidence: float
+    early_out_rationale: str
     # Per-run model selections (resolved from form or settings defaults)
     diagnostic_model: str
     skeptic_model: str
     moderator_model: str
+    summary_model: str
     # Per-run thinking level (none|low|medium|high) per agent
     diagnostic_reasoning_effort: str
     skeptic_reasoning_effort: str
@@ -77,3 +123,5 @@ class DebateState(TypedDict):
     # Prompt template selection (see prompt_store.py)
     template: str
     language: str
+    # Compression enabled flag
+    compress_history: bool
