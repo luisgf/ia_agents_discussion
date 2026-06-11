@@ -381,7 +381,7 @@ _KUBECTL_READONLY_VERBS = {
 
 
 @tool
-def run_kubectl(args: str, timeout: int = 20) -> str:
+def run_kubectl(kubectl_args: str, timeout: int = 20) -> str:
     """Run a READ-ONLY kubectl command and return its output.
 
     Allowed verbs: get, describe, logs, top, events, explain, version,
@@ -389,12 +389,12 @@ def run_kubectl(args: str, timeout: int = 20) -> str:
     delete, edit, exec, scale, ...) are rejected.
 
     Args:
-        args:    kubectl arguments WITHOUT the 'kubectl' prefix,
-                 e.g. "get pods -n prod -o wide" or "logs deploy/orders -n prod --tail=100".
-        timeout: Execution timeout in seconds (default 20).
+        kubectl_args: kubectl arguments WITHOUT the 'kubectl' prefix,
+                      e.g. "get pods -n prod -o wide" or "logs deploy/orders -n prod --tail=100".
+        timeout:      Execution timeout in seconds (default 20).
     """
     try:
-        argv = shlex.split(args)
+        argv = shlex.split(kubectl_args)
     except ValueError as exc:
         return f"Error parsing arguments: {exc}"
     if not argv:
