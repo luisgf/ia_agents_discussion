@@ -119,7 +119,7 @@ def _init_store() -> RunStore:
 # Streaming-only events: needed by live SSE subscribers but redundant once the
 # run finishes (agent_reasoning/agent_completed/tool_call carry the final data),
 # so they are dropped when persisting the run record to disk.
-_EPHEMERAL_EVENTS = frozenset({"agent_turn_started", "agent_delta", "tool_call_started"})
+_EPHEMERAL_EVENTS = frozenset({"agent_turn_started", "agent_delta"})
 
 
 class RunSession:
