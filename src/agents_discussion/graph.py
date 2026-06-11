@@ -1,7 +1,10 @@
 import json
+import logging
 import re
 import time
 import uuid
+
+_log = logging.getLogger(__name__)
 
 from langchain_core.messages import HumanMessage, SystemMessage, ToolMessage
 from langgraph.graph import END, START, StateGraph
@@ -419,7 +422,14 @@ def moderator_agent(state: DebateState) -> dict[str, object]:
         )
         if isinstance(result, ModeratorDecision):
             decision = result
-    except Exception:  # noqa: BLE001 — model/endpoint without tool-call support
+        else:
+            _log.warning(
+                "moderator structured output returned %s (expected ModeratorDecision), "
+                "falling back to plain-text path",
+                type(result).__name__,
+            )
+    except Exception as exc:  # noqa: BLE001 — model/endpoint without tool-call support
+        _log.warning("moderator structured output failed (%s), falling back to plain-text path", exc)
         decision = None
 
     if decision is None:
@@ -498,15 +508,25 @@ def _format_list(items: list[str]) -> str:
     return "\n".join(f"- {item}" for item in items)
 
 
+# Statuses that mean "run another debate round".
+# - "continue":        moderator explicitly wants another round
+# - "needs_more_data": diagnosis is incomplete, gather more evidence next round
+_CONTINUE_STATUSES = {"continue", "needs_more_data"}
+
+
 def route_after_moderator(state: DebateState) -> str:
     decision = state["moderator_decision"]
     if decision is None:
         return "finalize"
     if state["round"] > state["max_rounds"]:
         return "finalize"
-    if decision.confidence >= state["confidence_threshold"]:
-        return "finalize"
-    if decision.status != "continue":
+    # Honor the moderator's explicit status decision first.
+    # The confidence value is informational — the LLM already accounts for it
+    # when choosing the status, so we do NOT use it as a routing override here.
+    # (Previously confidence was checked before status, causing the debate to
+    # finalize even when status="continue" because Claude reliably returns
+    # confidence >= threshold after round 1.)
+    if decision.status not in _CONTINUE_STATUSES:
         return "finalize"
     return "user_input_gate"
 
