@@ -37,7 +37,6 @@ AGENT_EVENT_FIELDS = {
     "diagnostic_agent": ("diagnostic_response", "Diagnóstico Principal"),
     "skeptic_agent": ("skeptic_response", "Revisor Escéptico"),
     "diagnostic_rebuttal_agent": ("diagnostic_rebuttal", "Contrarréplica"),
-    "summarize_history": ("history_summary", "Resumen de historial"),
 }
 
 
@@ -186,21 +185,20 @@ def _extract_early_out(text: str) -> dict[str, object]:
 
 
 def _last_round_messages(history: list[DebateMessage], current_round: int) -> list[DebateMessage]:
-    """Return messages from the most recent round."""
-    # Messages from the previous moderator decision onwards
-    # A round is: diagnostic → skeptic → rebuttal → moderator
-    # We return ALL messages from the most recent cycle
+    """Return messages from the current round only.
+
+    Round N starts after the (N-1)th moderator decision in history.
+    """
     if not history:
         return []
-    # Find the last moderator message
-    last_mod_idx = -1
-    for i in range(len(history) - 1, -1, -1):
-        if history[i].role == "moderator":
-            last_mod_idx = i
-            break
-    if last_mod_idx == -1:
-        return history  # First round
-    return history[last_mod_idx + 1:]
+    mod_count = 0
+    for i, msg in enumerate(history):
+        if msg.role == "moderator":
+            mod_count += 1
+            if mod_count == current_round - 1:
+                return history[i + 1:]
+    # No previous moderator found → round 1 → entire history
+    return history
 
 
 def _build_compressed_history_prompt(
@@ -443,14 +441,6 @@ def _should_skip(state: DebateState, agent_node: str) -> bool:
 
 def skeptic_agent(state: DebateState) -> dict[str, object]:
     if _should_skip(state, "skeptic_agent"):
-        control = get_control(state.get("run_id", ""))
-        if control is not None:
-            control.emit({
-                "type": "agent_skipped",
-                "agent_node": "skeptic_agent",
-                "agent_role": "Revisor Escéptico",
-                "rationale": "Moderador solicitó saltar esta fase.",
-            })
         return {
             "skeptic_response": "(Fase escéptica omitida por decisión del moderador.)",
             "history": [DebateMessage(role="skeptic_agent", content="(omitido)")],
@@ -483,14 +473,12 @@ def skeptic_agent(state: DebateState) -> dict[str, object]:
     for h in state.get("hypotheses", []):
         new_h = h.model_copy() if hasattr(h, "model_copy") else Hypothesis(**h.model_dump())
         if f"[hypothesis:{h.id}]" in content or f"HYPOTHESIS-{h.id}" in content:
-            # Check for rejection markers in the text near the hypothesis reference
             idx = content.find(f"[hypothesis:{h.id}]")
             if idx == -1:
                 idx = content.find(f"HYPOTHESIS-{h.id}")
             snippet = content[idx:idx + 500] if idx >= 0 else ""
             if re.search(r"\brejected\b|\brechazada?\b|\binválida?\b", snippet, re.IGNORECASE):
                 new_h.state = "rejected"
-                # Try to extract reason
                 reason_match = re.search(r"[Rr]eason:\s*(.+?)(?=\n\n|\Z)", snippet, re.DOTALL)
                 new_h.rejected_reason = reason_match.group(1).strip() if reason_match else "Rechazada por el escéptico."
             elif re.search(r"\baccepted\b|\baceptada?\b|\bconfirmada?\b", snippet, re.IGNORECASE):
@@ -507,14 +495,6 @@ def skeptic_agent(state: DebateState) -> dict[str, object]:
 
 def diagnostic_rebuttal_agent(state: DebateState) -> dict[str, object]:
     if _should_skip(state, "diagnostic_rebuttal_agent"):
-        control = get_control(state.get("run_id", ""))
-        if control is not None:
-            control.emit({
-                "type": "agent_skipped",
-                "agent_node": "diagnostic_rebuttal_agent",
-                "agent_role": "Contrarréplica",
-                "rationale": "Moderador solicitó saltar esta fase.",
-            })
         return {
             "diagnostic_rebuttal": "(Fase de contrarréplica omitida por decisión del moderador.)",
             "history": [DebateMessage(role="diagnostic_rebuttal", content="(omitido)")],
@@ -641,12 +621,10 @@ def summarize_history(state: DebateState) -> dict[str, object]:
     if not compress or current_round <= 2 or not history:
         return {}
 
-    # Find messages from the just-completed round (after the last moderator decision)
     last_msgs = _last_round_messages(history, current_round)
     if not last_msgs:
         return {}
 
-    # Build a summary prompt
     summary_prompt_text = (
         "Resume los siguientes mensajes de un debate de diagnóstico técnico "
         "en un párrafo conciso (máximo 400 palabras) que capture:\n"
@@ -659,6 +637,7 @@ def summarize_history(state: DebateState) -> dict[str, object]:
     )
 
     summary_model_name = state.get("summary_model", state["moderator_model"])
+    summary_text = ""
     try:
         summary_model = create_github_model(summary_model_name, temperature=0.3)
         summary_response = summary_model.invoke([HumanMessage(content=summary_prompt_text)])
@@ -667,7 +646,6 @@ def summarize_history(state: DebateState) -> dict[str, object]:
         _log.warning("History summarization failed (%s), keeping full history", exc)
         return {}
 
-    # Store the round log
     round_log_entry = DebateRound(
         round=current_round,
         diagnostic=state.get("diagnostic_response", "")[:500],
@@ -676,17 +654,14 @@ def summarize_history(state: DebateState) -> dict[str, object]:
         moderator=json.loads(state["moderator_decision"].model_dump_json() if state.get("moderator_decision") else "{}"),
     )
 
-    control = get_control(state.get("run_id", ""))
-    if control is not None:
-        control.emit({
-            "type": "history_compressed",
-            "round": current_round,
-            "summary": summary_text,
-        })
-
     return {
         "history_summary": summary_text,
         "round_log": [round_log_entry],
+        "_summarize_event": {
+            "type": "history_compressed",
+            "round": current_round,
+            "summary": summary_text,
+        },
     }
 
 
@@ -977,6 +952,10 @@ def stream_debate_events(
                     "decision": decision_payload,
                     "round": node_update.get("round"),
                 }
+            elif node_name == "summarize_history":
+                ev = node_update.get("_summarize_event")
+                if ev:
+                    yield ev
             elif node_name == "finalize":
                 yield {
                     "type": "final_result",

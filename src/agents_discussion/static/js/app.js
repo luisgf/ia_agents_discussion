@@ -7,7 +7,6 @@ const ICO = {
   final: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><path d="m9 11 3 3L22 4"/></svg>',
   err: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3z"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg>',
   info: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/></svg>',
-  user: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>',
 };
 
 const AGENT_CFG = {
@@ -815,6 +814,29 @@ function renderEvent(ev) {
       'El modelo «' + (ev.model || '?') + '» del agente ' + (ev.agent_role || '?') +
       ' no admite nivel de thinking; se ignoró el valor «' + (ev.requested_effort || '?') + '».'
     ));
+    return;
+  }
+
+  if (ev.type === 'agent_skipped') {
+    hideTyping();
+    // Close any open tool group to keep UI clean
+    closeToolGroup();
+    const card = document.createElement('div');
+    card.className = 'info-card';
+    card.innerHTML =
+      '<div class="info-title">&#9888; ' + esc(ev.agent_role || ev.agent_node) + ' omitido</div>' +
+      '<p class="info-body">' + esc(ev.rationale || 'Decisión del moderador') + '</p>';
+    push(card);
+    return;
+  }
+
+  if (ev.type === 'history_compressed') {
+    const card = document.createElement('div');
+    card.className = 'info-card';
+    card.innerHTML =
+      '<div class="info-title">&#128209; Historial comprimido (ronda ' + esc(String(ev.round)) + ')</div>' +
+      '<p class="info-body">Las rondas anteriores se resumen para reducir tokens.</p>';
+    push(card);
     return;
   }
 
