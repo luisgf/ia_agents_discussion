@@ -288,7 +288,7 @@ function ensureLiveAgent(node, role) {
     '</div>' +
     '<div class="card-body"></div>';
   el.querySelector('.acard-head').addEventListener('click', () => el.classList.toggle('collapsed'));
-  liveAgent = { el, body: el.querySelector('.card-body'), buffer: '', node, role, timer: null };
+  liveAgent = { el, body: el.querySelector('.card-body'), buffer: '', node, role, timer: null, frozenHTML: '' };
   hideTyping();
   push(el);
   return liveAgent;
@@ -301,7 +301,8 @@ function appendLiveDelta(ev) {
   if (!live.timer) {
     live.timer = setTimeout(() => {
       live.timer = null;
-      live.body.innerHTML = md(live.buffer);
+      // Preserve frozen content (e.g., prior reasoning) while appending fresh deltas
+      live.body.innerHTML = live.frozenHTML + md(live.buffer);
       scrollBottom();
     }, 120);
   }
@@ -313,7 +314,17 @@ function appendLiveDelta(ev) {
 function finalizeLiveAgent(content, kind, subtitle) {
   if (!liveAgent) return false;
   const live = liveAgent;
-  liveAgent = null;
+  // Liberar referencia SOLO si el freeze es definitivo ('final')
+  // o si es llamado sin kind (cambio de agente en ensureLiveAgent).
+  // Cuando kind === 'reasoning', dejamos liveAgent activo para que
+  // ensureLiveAgent pueda reutilizar la tarjeta en la siguiente
+  // iteración LLM dentro del mismo ciclo ReAct.
+  if (!kind || kind === 'final') {
+    liveAgent = null;
+  } else if (kind === 'reasoning') {
+    // Snapshot the frozen HTML so subsequent deltas are appended, not overwritten
+    live.frozenHTML = live.body.innerHTML;
+  }
   if (live.timer) clearTimeout(live.timer);
   const text = content != null ? content : live.buffer;
   if (!String(text).trim()) { live.el.remove(); return true; }
