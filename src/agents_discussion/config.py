@@ -49,7 +49,7 @@ class Settings(BaseSettings):
     tools_enabled: bool = Field(True, alias="TOOLS_ENABLED")
     # Comma-separated tool names to expose to agents. Empty = all tools.
     enabled_tools: str = Field("", alias="ENABLED_TOOLS")
-    max_tool_calls_per_agent: int = Field(8, alias="MAX_TOOL_CALLS_PER_AGENT", ge=1, le=30)
+    max_tool_calls_per_agent: int = Field(8, alias="MAX_TOOL_CALLS_PER_AGENT", ge=1, le=50)
     max_consecutive_errors: int = Field(3, alias="MAX_CONSECUTIVE_ERRORS", ge=1, le=10)
 
     # ── Tool approval gating (web runs only) ─────────────────────────────
