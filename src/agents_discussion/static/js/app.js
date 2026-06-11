@@ -258,8 +258,22 @@ function buildReasoningCard(event) {
 // Created on agent_turn_started, fed token deltas by agent_delta, and frozen
 // in place by the turn's closing event (agent_reasoning / agent_completed).
 function ensureLiveAgent(node, role) {
-  if (liveAgent && liveAgent.node === node) return liveAgent;
-  finalizeLiveAgent();  // a previous live card was left open: freeze it as-is
+  // Reutilizar tarjeta del mismo nodo (reactivar si está congelada por reasoning)
+  if (liveAgent && liveAgent.node === node) {
+    if (!liveAgent.el.classList.contains('acard--streaming')) {
+      liveAgent.el.classList.add('acard--streaming');
+      liveAgent.el.classList.remove('acard--reasoning');
+      const sub = liveAgent.el.querySelector('.agent-sub');
+      sub.classList.remove('agent-sub--reasoning');
+      sub.classList.add('agent-sub--live');
+      sub.textContent = 'Razonando en tiempo real…';
+    }
+    // Reset buffer for a new LLM streaming iteration (same agent, new round of ReAct)
+    liveAgent.buffer = '';
+    if (liveAgent.timer) { clearTimeout(liveAgent.timer); liveAgent.timer = null; }
+    return liveAgent;
+  }
+  if (liveAgent) finalizeLiveAgent();
   const cfg = AGENT_CFG[node] || { cls: 'a-diag', ico: ICO.diag };
   const el = document.createElement('article');
   el.className = 'acard acard--streaming ' + cfg.cls;
@@ -268,7 +282,7 @@ function ensureLiveAgent(node, role) {
       '<div class="agent-id">' +
         '<div class="agent-ico">' + cfg.ico + '</div>' +
         '<div><span class="agent-nm">' + esc(role) + '</span>' +
-             '<span class="agent-sub agent-sub--live">Razonando en tiempo real&hellip;</span></div>' +
+             '<span class="agent-sub agent-sub--live">Razonando en tiempo real…</span></div>' +
       '</div>' +
       CHEVRON +
     '</div>' +
