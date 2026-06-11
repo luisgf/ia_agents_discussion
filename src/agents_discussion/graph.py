@@ -8,7 +8,7 @@ from langgraph.graph import END, START, StateGraph
 
 from agents_discussion.audit import audit_tool_call
 from agents_discussion.config import get_settings
-from agents_discussion.models import create_github_model
+from agents_discussion.models import _normalize_effort, create_github_model, supports_reasoning
 from agents_discussion.prompt_store import PromptTemplate, get_template
 from agents_discussion.prompts import (
     diagnostic_prompt,
@@ -38,6 +38,27 @@ def _message_content(response: object) -> str:
 
 def _template_for(state: DebateState) -> PromptTemplate:
     return get_template(state.get("template", ""), state.get("language", ""))
+
+
+def _resolve_effort(state: DebateState, effort_key: str, model: str, agent_node: str, agent_role: str) -> str | None:
+    """Normalize the requested thinking level for an agent and, when it was
+    requested but the chosen model cannot honour it, emit a one-shot UI warning.
+    Returns the effort to forward to the model (None ⇒ omit the parameter)."""
+    effort = _normalize_effort(state.get(effort_key))
+    if effort is None:
+        return None
+    if supports_reasoning(model):
+        return effort
+    control = get_control(state.get("run_id", ""))
+    if control is not None and control.warn_once(f"effort:{agent_node}"):
+        control.emit({
+            "type": "reasoning_effort_ignored",
+            "agent_node": agent_node,
+            "agent_role": agent_role,
+            "model": model,
+            "requested_effort": effort,
+        })
+    return None
 
 
 def _chunk_text(content: object) -> str:
@@ -274,8 +295,12 @@ def _run_with_tools(
 
 def diagnostic_agent(state: DebateState) -> dict[str, object]:
     template = _template_for(state)
+    effort = _resolve_effort(
+        state, "diagnostic_reasoning_effort", state["diagnostic_model"],
+        "diagnostic_agent", "Diagnóstico Principal",
+    )
     content, tool_log = _run_with_tools(
-        lambda: create_github_model(state["diagnostic_model"], temperature=0.2),
+        lambda: create_github_model(state["diagnostic_model"], temperature=0.2, reasoning_effort=effort),
         "diagnostic_agent",
         template.diagnostic_system,
         diagnostic_prompt(
@@ -293,8 +318,12 @@ def diagnostic_agent(state: DebateState) -> dict[str, object]:
 
 def skeptic_agent(state: DebateState) -> dict[str, object]:
     template = _template_for(state)
+    effort = _resolve_effort(
+        state, "skeptic_reasoning_effort", state["skeptic_model"],
+        "skeptic_agent", "Revisor Escéptico",
+    )
     content, tool_log = _run_with_tools(
-        lambda: create_github_model(state["skeptic_model"], temperature=0.1),
+        lambda: create_github_model(state["skeptic_model"], temperature=0.1, reasoning_effort=effort),
         "skeptic_agent",
         template.skeptic_system,
         skeptic_prompt(
@@ -312,8 +341,12 @@ def skeptic_agent(state: DebateState) -> dict[str, object]:
 
 def diagnostic_rebuttal_agent(state: DebateState) -> dict[str, object]:
     template = _template_for(state)
+    effort = _resolve_effort(
+        state, "diagnostic_reasoning_effort", state["diagnostic_model"],
+        "diagnostic_rebuttal_agent", "Contrarréplica",
+    )
     content, tool_log = _run_with_tools(
-        lambda: create_github_model(state["diagnostic_model"], temperature=0.2),
+        lambda: create_github_model(state["diagnostic_model"], temperature=0.2, reasoning_effort=effort),
         "diagnostic_rebuttal_agent",
         template.diagnostic_system,
         rebuttal_prompt(
@@ -357,7 +390,11 @@ def moderator_agent(state: DebateState) -> dict[str, object]:
 
     template = _template_for(state)
     language = state.get("language", "es")
-    model = create_github_model(state["moderator_model"], temperature=0.0)
+    effort = _resolve_effort(
+        state, "moderator_reasoning_effort", state["moderator_model"],
+        "moderator_agent", "Moderador",
+    )
+    model = create_github_model(state["moderator_model"], temperature=0.0, reasoning_effort=effort)
     prompt = moderator_prompt(
         state["topic"],
         state["context"],
@@ -512,6 +549,9 @@ def create_initial_state(
     template: str = "",
     language: str = "",
     initial_history: list[DebateMessage] | None = None,
+    diagnostic_reasoning_effort: str = "",
+    skeptic_reasoning_effort: str = "",
+    moderator_reasoning_effort: str = "",
 ) -> DebateState:
     settings = get_settings()
     return {
@@ -530,6 +570,9 @@ def create_initial_state(
         "diagnostic_model": diagnostic_model or settings.diagnostic_model,
         "skeptic_model": skeptic_model or settings.skeptic_model,
         "moderator_model": moderator_model or settings.moderator_model,
+        "diagnostic_reasoning_effort": diagnostic_reasoning_effort or settings.diagnostic_reasoning_effort,
+        "skeptic_reasoning_effort": skeptic_reasoning_effort or settings.skeptic_reasoning_effort,
+        "moderator_reasoning_effort": moderator_reasoning_effort or settings.moderator_reasoning_effort,
         "run_id": run_id,
         "template": template or settings.prompt_template,
         "language": language or settings.prompt_language,
@@ -558,6 +601,9 @@ def stream_debate_events(
     template: str = "",
     language: str = "",
     initial_history: list[DebateMessage] | None = None,
+    diagnostic_reasoning_effort: str = "",
+    skeptic_reasoning_effort: str = "",
+    moderator_reasoning_effort: str = "",
 ):
     graph = build_graph()
     initial_state = create_initial_state(
@@ -570,6 +616,9 @@ def stream_debate_events(
         template=template,
         language=language,
         initial_history=initial_history,
+        diagnostic_reasoning_effort=diagnostic_reasoning_effort,
+        skeptic_reasoning_effort=skeptic_reasoning_effort,
+        moderator_reasoning_effort=moderator_reasoning_effort,
     )
 
     yield {

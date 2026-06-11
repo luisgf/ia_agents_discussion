@@ -24,6 +24,14 @@ class Settings(BaseSettings):
     skeptic_model: str = Field("copilot/claude-sonnet-4.6", alias="SKEPTIC_MODEL")
     moderator_model: str = Field("copilot/claude-sonnet-4.6", alias="MODERATOR_MODEL")
 
+    # ── Thinking / reasoning level (per agent) ───────────────────────────
+    # Only forwarded to reasoning-capable models (o1/o3/o4/gpt-5 families
+    # and all Claude variants); silently ignored for others (e.g. gpt-4o).
+    # Valid values: none|low|medium|high.
+    diagnostic_reasoning_effort: str = Field("none", alias="DIAGNOSTIC_REASONING_EFFORT")
+    skeptic_reasoning_effort: str = Field("none", alias="SKEPTIC_REASONING_EFFORT")
+    moderator_reasoning_effort: str = Field("none", alias="MODERATOR_REASONING_EFFORT")
+
     max_rounds: int = Field(4, alias="MAX_ROUNDS", ge=1, le=10)
     confidence_threshold: float = Field(0.8, alias="CONFIDENCE_THRESHOLD", ge=0.0, le=1.0)
 

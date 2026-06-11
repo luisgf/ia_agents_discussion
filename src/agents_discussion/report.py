@@ -23,6 +23,7 @@ def build_markdown_report(run: dict) -> str:
     lines: list[str] = []
     topic = run.get("topic", "")
     models = run.get("models") or {}
+    efforts = run.get("reasoning_effort") or {}
 
     lines.append(f"# Informe de diagnóstico: {topic}\n")
     lines.append(f"- **Run ID:** `{run.get('run_id', '')}`")
@@ -34,6 +35,14 @@ def build_markdown_report(run: dict) -> str:
         lines.append(
             f"- **Modelos:** diagnóstico `{models.get('diagnostic', '—')}` · "
             f"escéptico `{models.get('skeptic', '—')}` · moderador `{models.get('moderator', '—')}`"
+        )
+    if efforts and any(v and v != "none" for v in efforts.values()):
+        def _eff(key: str) -> str:
+            v = efforts.get(key) or "none"
+            return v if v != "none" else "—"
+        lines.append(
+            f"- **Nivel de thinking:** diagnóstico `{_eff('diagnostic')}` · "
+            f"escéptico `{_eff('skeptic')}` · moderador `{_eff('moderator')}`"
         )
     if run.get("template"):
         lines.append(f"- **Plantilla:** {run['template']} ({run.get('language', 'es')})")

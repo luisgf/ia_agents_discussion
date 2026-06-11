@@ -62,6 +62,20 @@ class RunControl:
         self._comment_text: str | None = None
         self._comment_waiting = False
 
+        self._warned: set[str] = set()
+        self._warned_lock = threading.Lock()
+
+    # ── One-shot warnings (graph side) ───────────────────────────────────
+
+    def warn_once(self, key: str) -> bool:
+        """Return True only the first time `key` is seen for this run, so the
+        graph can emit an informational warning without spamming every round."""
+        with self._warned_lock:
+            if key in self._warned:
+                return False
+            self._warned.add(key)
+            return True
+
     # ── Cancellation ─────────────────────────────────────────────────────
 
     @property

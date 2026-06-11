@@ -1,10 +1,71 @@
 import os
+import re
 
 import httpx
 from langchain_core.language_models import BaseChatModel
 from langchain_openai import ChatOpenAI
 
 from agents_discussion.config import get_settings
+
+
+# ── Reasoning effort (thinking level) ────────────────────────────────────────
+#
+# Only OpenAI reasoning families accept the `reasoning_effort` parameter over
+# the OpenAI-compatible endpoints. Non-reasoning models (e.g. gpt-4o) and
+# Claude reject it, so we both normalize the requested value and gate it
+# behind an allowlist matched on name segments to avoid false positives
+# (e.g. "gpt-4o" must NOT match the "o4" reasoning family).
+
+_VALID_EFFORTS = ("low", "medium", "high")
+_REASONING_MARKERS = ("o1", "o3", "o4")   # exact name segments for OpenAI families
+_CLAUDE_FAMILIES   = frozenset({"sonnet", "opus"})  # families that may support thinking
+
+
+def _normalize_effort(value: str | None) -> str | None:
+    """Return a valid effort level or None (meaning: do not send the param)."""
+    if not value:
+        return None
+    v = value.strip().lower()
+    return v if v in _VALID_EFFORTS else None
+
+
+def _claude_supports_reasoning(segments: list[str]) -> bool:
+    """True for Claude variants that support extended thinking via reasoning_effort.
+
+    Supported patterns (after splitting on '/', '-', '.'):
+      claude-{family}-4.x   →  v4 style: sonnet/opus + major version >= 4
+      claude-3.7-{family}   →  the 3.7 series (first Claude with extended thinking)
+
+    Not supported: all haiku variants, claude-3.5-* and any other 3.x series.
+    """
+    if "haiku" in segments:
+        return False
+    try:
+        tail = segments[segments.index("claude") + 1:]
+    except ValueError:
+        return False
+    # v4+ style: claude-{family}-{major}.{minor}  e.g. claude-sonnet-4-5
+    if tail and tail[0] in _CLAUDE_FAMILIES:
+        return len(tail) > 1 and tail[1].isdigit() and int(tail[1]) >= 4
+    # v3.7 style: claude-3.7-{family}  →  segments [...,'3','7',...]
+    if len(tail) >= 2 and tail[0] == "3" and tail[1] == "7":
+        return True
+    return False
+
+
+def supports_reasoning(model: str) -> bool:
+    """True when the model accepts the `reasoning_effort` parameter.
+
+    - OpenAI reasoning families (o1/o3/o4) and gpt-5: always accepted.
+    - Claude: only sonnet/opus v4+ and 3.7-sonnet; haiku and 3.5/3.x excluded.
+    """
+    name = model.removeprefix("copilot/").lower()
+    segments = re.split(r"[/\-.]", name)
+    if "claude" in segments:
+        return _claude_supports_reasoning(segments)
+    if any(seg in _REASONING_MARKERS for seg in segments):
+        return True
+    return any(seg.startswith("gpt-5") or seg == "gpt5" for seg in segments) or "gpt-5" in name
 
 
 def _http_client() -> httpx.Client | None:
@@ -16,7 +77,7 @@ def _http_client() -> httpx.Client | None:
 
 # ── GitHub Models (ChatOpenAI → models.github.ai) ────────────────────────────
 
-def _create_github_models_model(model: str, temperature: float) -> ChatOpenAI:
+def _create_github_models_model(model: str, temperature: float, reasoning_effort: str | None = None) -> ChatOpenAI:
     settings = get_settings()
     if not settings.github_token:
         raise ValueError(
@@ -24,12 +85,16 @@ def _create_github_models_model(model: str, temperature: float) -> ChatOpenAI:
             "Añade GITHUB_TOKEN=<tu_pat> en el fichero .env, "
             "o usa el prefijo 'copilot/' en el nombre del modelo para usar GitHub Copilot."
         )
+    kwargs: dict = {}
+    if reasoning_effort:
+        kwargs["reasoning_effort"] = reasoning_effort
     return ChatOpenAI(
         model=model,
         api_key=settings.github_token,
         base_url=settings.github_models_base_url,
         temperature=temperature,
         http_client=_http_client(),
+        **kwargs,
     )
 
 
@@ -52,7 +117,7 @@ _COPILOT_HEADERS: dict[str, str] = {
 }
 
 
-def _create_copilot_model(model: str, temperature: float) -> ChatOpenAI:
+def _create_copilot_model(model: str, temperature: float, reasoning_effort: str | None = None) -> ChatOpenAI:
     """Create a ChatOpenAI instance pointed at the Copilot inference endpoint.
 
     Authentication is a two-stage flow:
@@ -70,6 +135,9 @@ def _create_copilot_model(model: str, temperature: float) -> ChatOpenAI:
         )
 
     session_token = get_session_token(ghu_token)
+    kwargs: dict = {}
+    if reasoning_effort:
+        kwargs["reasoning_effort"] = reasoning_effort
     return ChatOpenAI(
         model=model,
         api_key=session_token,
@@ -77,33 +145,57 @@ def _create_copilot_model(model: str, temperature: float) -> ChatOpenAI:
         temperature=temperature,
         default_headers=_COPILOT_HEADERS,
         http_client=_http_client(),
+        **kwargs,
     )
 
 
 # ── Router ────────────────────────────────────────────────────────────────────
 
-def create_github_model(model: str, temperature: float = 0.2) -> BaseChatModel:
+def create_github_model(
+    model: str,
+    temperature: float = 0.2,
+    reasoning_effort: str | None = None,
+) -> BaseChatModel:
     """Return the appropriate chat model based on the model name prefix.
 
     Prefixes:
       copilot/<name>  →  ChatOpenAI via api.githubcopilot.com
       anything else   →  ChatOpenAI via models.github.ai
+
+    `reasoning_effort` (low|medium|high) is only forwarded when the value is
+    valid AND the model belongs to a reasoning-capable family; otherwise it is
+    silently dropped so non-reasoning models keep working unchanged.
     """
+    effort = _normalize_effort(reasoning_effort)
+    if effort is not None and not supports_reasoning(model):
+        effort = None
     if model.startswith("copilot/"):
-        return _create_copilot_model(model.removeprefix("copilot/"), temperature)
-    return _create_github_models_model(model, temperature)
+        return _create_copilot_model(model.removeprefix("copilot/"), temperature, effort)
+    return _create_github_models_model(model, temperature, effort)
 
 
 def create_diagnostic_model() -> BaseChatModel:
     settings = get_settings()
-    return create_github_model(settings.diagnostic_model, temperature=0.2)
+    return create_github_model(
+        settings.diagnostic_model,
+        temperature=0.2,
+        reasoning_effort=settings.diagnostic_reasoning_effort,
+    )
 
 
 def create_skeptic_model() -> BaseChatModel:
     settings = get_settings()
-    return create_github_model(settings.skeptic_model, temperature=0.1)
+    return create_github_model(
+        settings.skeptic_model,
+        temperature=0.1,
+        reasoning_effort=settings.skeptic_reasoning_effort,
+    )
 
 
 def create_moderator_model() -> BaseChatModel:
     settings = get_settings()
-    return create_github_model(settings.moderator_model, temperature=0.0)
+    return create_github_model(
+        settings.moderator_model,
+        temperature=0.0,
+        reasoning_effort=settings.moderator_reasoning_effort,
+    )

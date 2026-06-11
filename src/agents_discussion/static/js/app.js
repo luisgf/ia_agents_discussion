@@ -715,6 +715,15 @@ function renderEvent(ev) {
     return;
   }
 
+  if (ev.type === 'reasoning_effort_ignored') {
+    push(buildInfoCard(
+      'Nivel de thinking ignorado',
+      'El modelo «' + (ev.model || '?') + '» del agente ' + (ev.agent_role || '?') +
+      ' no admite nivel de thinking; se ignoró el valor «' + (ev.requested_effort || '?') + '».'
+    ));
+    return;
+  }
+
   hideTyping();
 
   if (ev.type === 'run_started') {
@@ -1050,6 +1059,10 @@ async function loadModels() {
     populateSelect('sel-skeptic', models, settings.skeptic_model    || '');
     populateSelect('sel-mod',     models, settings.moderator_model  || '');
 
+    setEffort('sel-diag-effort',    settings.diagnostic_reasoning_effort);
+    setEffort('sel-skeptic-effort', settings.skeptic_reasoning_effort);
+    setEffort('sel-mod-effort',     settings.moderator_reasoning_effort);
+
     defaultApproval = settings.tool_approval_required !== false;
     document.getElementById('require_approval').checked = defaultApproval;
     if (settings.prompt_language) {
@@ -1071,6 +1084,13 @@ const PROV_LABELS = {
   copilot:       'GitHub Copilot',
   github_models: 'GitHub Models',
 };
+
+function setEffort(id, value) {
+  const sel = document.getElementById(id);
+  if (!sel) return;
+  const valid = ['none', 'low', 'medium', 'high'];
+  sel.value = valid.includes(value) ? value : 'none';
+}
 
 function populateSelect(id, models, selected) {
   const sel = document.getElementById(id);

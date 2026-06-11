@@ -170,6 +170,7 @@ app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 def _run_debate_sync(session: RunSession) -> None:
     """Worker-thread body: drive the debate graph and publish every event."""
     models = session.meta.get("models", {})
+    efforts = session.meta.get("reasoning_effort", {})
     try:
         for event in stream_debate_events(
             session.meta["topic"],
@@ -183,6 +184,9 @@ def _run_debate_sync(session: RunSession) -> None:
             initial_history=_history_from_events(
                 (store.get(session.meta["parent_run_id"]) or {}).get("events", [])
             ) if session.meta.get("parent_run_id") else None,
+            diagnostic_reasoning_effort=efforts.get("diagnostic", ""),
+            skeptic_reasoning_effort=efforts.get("skeptic", ""),
+            moderator_reasoning_effort=efforts.get("moderator", ""),
         ):
             if session.control is not None and session.control.cancelled:
                 session.status = "cancelled"
@@ -279,6 +283,9 @@ async def settings_api() -> JSONResponse:
             "diagnostic_model":      s.diagnostic_model,
             "skeptic_model":         s.skeptic_model,
             "moderator_model":       s.moderator_model,
+            "diagnostic_reasoning_effort": s.diagnostic_reasoning_effort,
+            "skeptic_reasoning_effort":    s.skeptic_reasoning_effort,
+            "moderator_reasoning_effort":  s.moderator_reasoning_effort,
             "max_rounds":            s.max_rounds,
             "confidence_threshold":  s.confidence_threshold,
             "prompt_template":       s.prompt_template,
@@ -418,6 +425,9 @@ async def create_run(
     diagnostic_model: Annotated[str, Form()] = "",
     skeptic_model:    Annotated[str, Form()] = "",
     moderator_model:  Annotated[str, Form()] = "",
+    diagnostic_reasoning_effort: Annotated[str, Form()] = "",
+    skeptic_reasoning_effort:    Annotated[str, Form()] = "",
+    moderator_reasoning_effort:  Annotated[str, Form()] = "",
     template:         Annotated[str, Form()] = "",
     language:         Annotated[str, Form()] = "",
     pause_between_rounds: Annotated[str, Form()] = "",
@@ -462,6 +472,11 @@ async def create_run(
             "diagnostic": diagnostic_model or settings.diagnostic_model,
             "skeptic":    skeptic_model    or settings.skeptic_model,
             "moderator":  moderator_model  or settings.moderator_model,
+        },
+        "reasoning_effort": {
+            "diagnostic": diagnostic_reasoning_effort or settings.diagnostic_reasoning_effort,
+            "skeptic":    skeptic_reasoning_effort    or settings.skeptic_reasoning_effort,
+            "moderator":  moderator_reasoning_effort  or settings.moderator_reasoning_effort,
         },
         "template":      template or settings.prompt_template,
         "language":      language or settings.prompt_language,
@@ -519,6 +534,7 @@ async def resume_run(
         "topic":         parent.get("topic", ""),
         "timestamp":     datetime.now(timezone.utc).isoformat(),
         "models":        parent.get("models") or {},
+        "reasoning_effort": parent.get("reasoning_effort") or {},
         "template":      parent.get("template", ""),
         "language":      parent.get("language", ""),
         "parent_run_id": run_id,

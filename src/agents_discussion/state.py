@@ -67,6 +67,10 @@ class DebateState(TypedDict):
     diagnostic_model: str
     skeptic_model: str
     moderator_model: str
+    # Per-run thinking level (none|low|medium|high) per agent
+    diagnostic_reasoning_effort: str
+    skeptic_reasoning_effort: str
+    moderator_reasoning_effort: str
     # Web-run plumbing: run_id links graph nodes to the RunControl registry
     # (tool approval, human-in-the-loop, cancellation). Empty for CLI runs.
     run_id: str
