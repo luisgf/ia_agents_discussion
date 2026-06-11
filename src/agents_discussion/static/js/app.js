@@ -747,13 +747,11 @@ async function submitComment(text, div) {
 // ── Event rendering ────────────────────────────────────────────────────
 function renderEvent(ev) {
   if (ev.type === 'agent_turn_started') {
-    closeToolGroup();
     ensureLiveAgent(ev.agent_node, ev.agent_role);
     return;
   }
 
   if (ev.type === 'agent_delta') {
-    closeToolGroup();
     appendLiveDelta(ev);
     return;
   }
