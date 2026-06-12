@@ -79,6 +79,39 @@ def _run_argv(argv: list[str], timeout: int) -> str:
 # ── SSH ─────────────────────────────────────────────────────────────────────
 
 
+def _resolve_ssh_key(key_path: str) -> tuple[str | None, str]:
+    """Resolve the SSH key file to use, guarding against nonexistent paths.
+
+    The LLM sometimes passes a key_path copied (or mistyped) from the context.
+    Returns (key_filename, note): the path to hand to paramiko (None → let it
+    auto-discover ~/.ssh/id_* and the agent) and a note describing any
+    substitution. A note starting with "SSH key file not found" means no usable
+    key was found and the caller should fail fast with that message.
+    """
+    requested = os.path.expanduser(key_path) if key_path else ""
+    if requested and os.path.exists(requested):
+        return requested, ""
+
+    default_raw = os.environ.get("SSH_KEY_PATH", "")
+    default = os.path.expanduser(default_raw) if default_raw else ""
+    if default and os.path.exists(default):
+        if requested:
+            return default, (
+                f"[nota: key_path '{key_path}' no existe; usando la clave por defecto "
+                f"'{default_raw}'. No vuelvas a pasar esa ruta.]\n"
+            )
+        return default, ""
+
+    if requested:
+        extra = f" (default SSH_KEY_PATH '{default_raw}' not found either)" if default_raw else ""
+        return None, (
+            f"SSH key file not found: '{key_path}'{extra}. "
+            "Omite key_path para usar los defaults del sistema (~/.ssh/id_* o ssh-agent)."
+        )
+    # Nothing requested and no (valid) default: let paramiko auto-discover.
+    return None, ""
+
+
 @tool
 def run_ssh_command(
     host: str,
@@ -94,21 +127,23 @@ def run_ssh_command(
         host:     IP or hostname of the remote server.
         command:  Shell command to execute (e.g. "ps aux | grep python").
         user:     SSH username. Falls back to SSH_DEFAULT_USER env var.
-        key_path: Path to the private key file. Falls back to SSH_KEY_PATH env var.
+        key_path: Path to the private key file. Leave empty to use the configured
+                  default (SSH_KEY_PATH) or the system keys; only set it to
+                  override them with a path you know exists.
         port:     SSH port (default 22).
         timeout:  Connection + execution timeout in seconds (default 15).
     """
     user = user or os.environ.get("SSH_DEFAULT_USER") or getpass.getuser()
-    key_path = key_path or os.environ.get("SSH_KEY_PATH", "")
 
     if not host:
         return "Error: 'host' is required."
 
+    key_filename, key_note = _resolve_ssh_key(key_path)
+    if key_filename is None and key_note:
+        return key_note
+
     client = paramiko.SSHClient()
     client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-
-    # When key_path is empty let paramiko auto-discover ~/.ssh/id_* and the SSH agent.
-    key_filename = os.path.expanduser(key_path) if key_path else None
 
     try:
         t0 = time.monotonic()
@@ -134,7 +169,7 @@ def run_ssh_command(
         if err:
             parts.append(f"[stderr]\n{err.rstrip()}")
         result = "\n".join(parts) if parts else "(no output)"
-        return _truncate(f"# {user}@{host} $ {command}  ({elapsed} ms)\n{result}")
+        return _truncate(f"{key_note}# {user}@{host} $ {command}  ({elapsed} ms)\n{result}")
 
     except paramiko.AuthenticationException as exc:
         return f"SSH authentication failed for {user}@{host}: {exc}"

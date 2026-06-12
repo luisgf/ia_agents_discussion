@@ -384,7 +384,23 @@ function finalizeLiveAgent(content, kind, subtitle) {
   }
   if (live.timer) clearTimeout(live.timer);
   const text = content != null ? content : live.buffer;
-  if (!String(text).trim()) { live.el.remove(); return true; }
+  if (!String(text).trim()) {
+    if (live.frozenHTML) {
+      // Nada nuevo que mostrar, pero hay razonamiento congelado de iteraciones
+      // anteriores: conservar la tarjeta en vez de borrarla del DOM.
+      live.el.classList.remove('acard--streaming');
+      live.el.classList.add('acard--reasoning');
+      const sub = live.el.querySelector('.agent-sub');
+      sub.classList.remove('agent-sub--live');
+      sub.classList.add('agent-sub--reasoning');
+      sub.textContent = 'Razonamiento';
+      return true;
+    }
+    live.el.remove();
+    // Cierre 'final' sin contenido ni razonamiento: devolver false para que el
+    // caller cree la tarjeta estática (buildAgentCard) con el evento original.
+    return kind !== 'final';
+  }
   live.el.classList.remove('acard--streaming');
   if (kind === 'reasoning') live.el.classList.add('acard--reasoning');
   live.body.innerHTML = md(text);

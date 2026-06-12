@@ -72,7 +72,7 @@ Sé denso: máximo ~600 palabras; cita las salidas de tools resumidas (líneas c
         ),
         "json_only": (
             "Responde ÚNICAMENTE con un objeto JSON válido que siga este esquema "
-            "(sin texto adicional antes ni después):"
+            "(sin texto adicional antes ni después, y sin fences de código ```):"
         ),
     },
     "en": {
@@ -142,7 +142,7 @@ Be dense: ~600 words max; quote tool outputs summarized (key lines only), never 
         ),
         "json_only": (
             "Respond ONLY with a valid JSON object following this schema "
-            "(no additional text before or after):"
+            "(no additional text before or after, and no code fences ```):"
         ),
     },
 }

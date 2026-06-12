@@ -1,5 +1,6 @@
 import asyncio
 import json
+import logging
 import os
 import tempfile
 import threading
@@ -33,6 +34,8 @@ from agents_discussion.state import DebateMessage
 
 
 load_dotenv()
+
+_log = logging.getLogger(__name__)
 
 STATIC_DIR = Path(__file__).parent / "static"
 
@@ -777,7 +780,12 @@ def _append_ssh_defaults(context: str, host: str, user: str, port: int, key_path
     if port and port != 22:
         lines.append(f"Default SSH port: {port}")
     if key_path.strip():
-        lines.append(f"Default SSH key path: {key_path.strip()}")
+        # Never propagate a nonexistent key path into the LLM context: agents copy
+        # it verbatim into tool calls and every SSH call fails.
+        if os.path.exists(os.path.expanduser(key_path.strip())):
+            lines.append(f"Default SSH key path: {key_path.strip()}")
+        else:
+            _log.warning("SSH key path does not exist, not injecting into context: %s", key_path)
     if not lines:
         return context
     block = "=== SSH Connection Defaults ===\n" + "\n".join(lines)

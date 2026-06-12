@@ -476,6 +476,29 @@ def _run_with_tools(
             consecutive_errors = 0
 
     content = _message_content(response)
+    if not content.strip():
+        # Algunos modelos razonadores (p.ej. Kimi) cierran una cadena larga de tools
+        # con un mensaje visible vacío. Pedir la respuesta final una vez antes de rendirse.
+        _log.warning("%s returned empty final content after %d tool calls; nudging once", agent_node, call_count)
+        messages.append(
+            HumanMessage(
+                content=(
+                    "No has entregado tu respuesta final. Escribe AHORA tu informe final "
+                    "completo según el formato pedido en el mensaje inicial, sin llamar "
+                    "a más herramientas."
+                )
+            )
+        )
+        response = _invoke_streaming(model, messages, control, agent_node, agent_role)
+        usage_meta = getattr(response, "usage_metadata", None) or {}
+        total_input  += usage_meta.get("input_tokens",  0) or 0
+        total_output += usage_meta.get("output_tokens", 0) or 0
+        total_tokens += usage_meta.get("total_tokens",  0) or 0
+        content = _message_content(response)
+
+    if not content.strip():
+        content = f"(El agente no entregó respuesta final tras {call_count} llamadas a herramientas.)"
+
     node_usage = {
         "input_tokens":  total_input,
         "output_tokens": total_output,
@@ -738,6 +761,43 @@ def _parse_moderator_response(text: str) -> ModeratorDecision:
     return ModeratorDecision.model_validate_json(cleaned[start:end + 1])
 
 
+def _usage_from_message(msg: object) -> dict[str, int]:
+    raw_usage = getattr(msg, "usage_metadata", None) or {}
+    return {
+        "input_tokens":  raw_usage.get("input_tokens",  0) or 0,
+        "output_tokens": raw_usage.get("output_tokens", 0) or 0,
+        "total_tokens":  raw_usage.get("total_tokens",  0) or 0,
+    }
+
+
+def _decision_from_structured_result(result: object) -> tuple[ModeratorDecision | None, dict[str, int]]:
+    """Extract a ModeratorDecision (and token usage) from a with_structured_output result.
+
+    With include_raw=True langchain returns {"raw", "parsed", "parsing_error"}.
+    When the model wraps the JSON in code fences, ``parsed`` is None but ``raw``
+    holds the full response — rescue it with the fence-aware parser instead of
+    re-invoking the model (which would double the moderator's cost).
+    """
+    if isinstance(result, ModeratorDecision):
+        return result, {}
+    if not isinstance(result, dict):
+        return None, {}
+
+    raw_msg = result.get("raw")
+    usage = _usage_from_message(raw_msg) if raw_msg is not None else {}
+    parsed = result.get("parsed")
+    if isinstance(parsed, ModeratorDecision):
+        return parsed, usage
+
+    raw_text = _message_content(raw_msg) if raw_msg is not None else ""
+    if raw_text.strip():
+        try:
+            return _parse_moderator_response(raw_text), usage
+        except Exception as exc:  # noqa: BLE001
+            _log.warning("moderator raw rescue failed (%s)", exc)
+    return None, {}
+
+
 def moderator_agent(state: DebateState) -> dict[str, object]:
     control = get_control(state.get("run_id", ""))
     if control is not None:
@@ -779,22 +839,11 @@ def moderator_agent(state: DebateState) -> dict[str, object]:
                 HumanMessage(content=prompt),
             ]
         )
-        if isinstance(result, dict) and isinstance(result.get("parsed"), ModeratorDecision):
-            decision = result["parsed"]
-            raw_msg = result.get("raw")
-            raw_usage = getattr(raw_msg, "usage_metadata", None) or {}
-            mod_usage = {
-                "input_tokens":  raw_usage.get("input_tokens",  0) or 0,
-                "output_tokens": raw_usage.get("output_tokens", 0) or 0,
-                "total_tokens":  raw_usage.get("total_tokens",  0) or 0,
-            }
-        elif isinstance(result, ModeratorDecision):
-            decision = result
-        else:
+        decision, mod_usage = _decision_from_structured_result(result)
+        if decision is None:
             _log.warning(
-                "moderator structured output returned %s (expected ModeratorDecision), "
+                "moderator structured output unusable (parsed missing and raw rescue failed), "
                 "falling back to plain-text path",
-                type(result).__name__,
             )
     except Exception as exc:
         _log.warning("moderator structured output failed (%s), falling back to plain-text path", exc)
