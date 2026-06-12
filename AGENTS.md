@@ -79,7 +79,7 @@ moderator_model         # Modelo del moderador
 summary_model           # Modelo para comprimir history (vacío = usa moderator_model)
 history                 # Lista[DebateMessage] con Annotated reducer (append)
 token_usage             # Dict[agent_node, {input_tokens, output_tokens, total_tokens}] — reducer _merge_usage
-hypotheses              # Lista[Hypothesis] con reducer append
+hypotheses              # Lista[Hypothesis] con reducer merge-by-id (_merge_hypotheses)
 round_log               # Lista[DebateRound] con reducer append
 tool_calls_log          # Lista[ToolCallEntry] con reducer append
 moderator_decision      # ModeratorDecision | None (último veredicto del moderador)
@@ -173,6 +173,7 @@ Implementada en `graph.py`. Cada llamada LLM retorna `usage_metadata`:
 - **Node returns**: dicts parciales (solo los campos modificados)
 - **Frontend JS**: `const`/`let`, no `var`; siempre `esc()` para texto usuario, `md()` para markdown
 - **Nuevos campos de estado**: añadir en `state.py` con el reducer apropiado; inicializar en `create_initial_state()`
+- **Tests**: `tests/` con pytest (`.venv/bin/python -m pytest`); lógica pura sin LLM (modelos stub, monkeypatch de `create_github_model`/`get_settings`)
 
 ---
 
@@ -214,10 +215,12 @@ agent_completed     → {node, role, content}
 agent_reasoning     → {agent_node, agent_role, content}
 agent_skipped       → {node, role, rationale}
 tool_call_started   → {call_id, agent_node, tool_name, args}
-tool_call           → {call_id, tool_name, args, result, error, approval, duration_ms}
+tool_call           → {call_id, tool_name, args, result, error, approval, cached, duration_ms}
+                      approval ∈ auto|approved|rejected|timeout|cached (cached = servido del ToolCache, sin re-ejecución)
 tool_approval_request → {tool_name, args, agent_role}
 tool_approval_resolved → {approved, approval}
 moderator_decision  → {node, decision: ModeratorDecision, round}
+hypothesis_update   → {node, round, hypotheses: [Hypothesis…]}  (snapshot completo deduplicado)
 history_compressed  → {round, summary}
 awaiting_user_input → {round}
 user_comment        → {content}
@@ -278,43 +281,97 @@ GET    /api/runs/{id}/report        Informe Markdown
   - Filtro de ronda (All/1/2/3), botón ▶ Reproducir (revela nodos ronda a ronda simulando SSE), panel lateral con detalle completo e historial de transiciones
   - Paleta heredada de `app.css` (variables `--diag`, `--final`, `--err`, etc.)
 
-## Modelo de hipótesis (estado actual)
+## Modelo de hipótesis (implementación real)
 
-Relevante para la futura integración del mapa interactivo en la UI real.
+El mapa de hipótesis está integrado en la UI real (pestaña **Mapa**); el mockup queda como referencia de diseño.
 
 ### Modelo `Hypothesis` (`state.py`)
 
 ```python
+class HypothesisTransition(BaseModel):    # serializar SIEMPRE con model_dump(by_alias=True)
+    round: int
+    from_state: str | None   # alias "from"; None = creación
+    to_state: str             # alias "to"
+    agent: str
+    note: str
+
 class Hypothesis(BaseModel):
-    id: str                # e.g. "1", "2" (el LLM emite HYPOTHESIS-<n>)
+    id: str                # id crudo del LLM (HYPOTHESIS-<n>); clave canónica de merge
     text: str
     state: Literal["active", "rejected", "confirmed"]
     proposer: str          # siempre "diagnostic_agent" en la práctica
-    round: int             # ronda de creación (NO se actualiza en transiciones)
-    supporting_evidence: list[str]   # ⚠ siempre vacío — nunca se puebla
+    round: int             # ronda de CREACIÓN (las transiciones llevan su propia ronda)
+    probability: float | None  # P estimada por los agentes (formato "### HYPOTHESIS-n [P=0.6]"); clamp en extracción
+    supporting_evidence: list[str]   # líneas [tool:...] del bloque de la hipótesis
     rejected_reason: str | None
+    transitions: list[HypothesisTransition]
 ```
 
-### Limitaciones conocidas (deuda técnica para la implementación real)
+El escéptico recalibra P por hipótesis (`[P=<0-1>]` junto al id en su respuesta, parseado en
+`skeptic_agent`); en el merge, P entrante `None` conserva la anterior.
 
-| Problema | Impacto |
-|---|---|
-| **Las hipótesis no se emiten por SSE ni se persisten** | El frontend no las conoce; solo ve `leading_hypothesis`/`rejected_hypotheses` como strings sueltos del moderador |
-| **Reducer `_append_list` duplica** | El escéptico devuelve copias mutadas que se appendean; la lista acumula versiones obsoletas |
-| **IDs inestables entre rondas** | El LLM reinicia numeración cada ronda; `H-1` de ronda 1 ≠ `H-1` de ronda 2 |
-| **`round` no se actualiza en transiciones** | No se puede saber cuándo cambió de estado, solo cuándo se creó |
-| **Sin aristas explícitas** | No existen relaciones `refuta`/`corrobora`/`deriva-de` entre hipótesis |
-| **`supporting_evidence` siempre vacío** | Nunca se puebla en ningún nodo |
-| **`diagnostic_rebuttal_agent` no actualiza hipótesis** | Las refinaciones del rebuttal no llegan al modelo estructurado |
+### Diseño implementado
 
-### Plan de implementación real (cuando se decida avanzar)
+- **Reducer `_merge_hypotheses`** (state.py): merge by id, orden de primera aparición; conserva `round`/`proposer` originales, toma `state`/`text`/`rejected_reason` entrantes, union de evidencias, dedup de transiciones por `(round, to_state, agent)` descartando creaciones re-emitidas.
+- **IDs estables**: el prompt del diagnóstico recibe las hipótesis en debate (`diagnostic_prompt(..., hypotheses=...)`) e instruye a reutilizar ids exactos y continuar la numeración. El fallback sin formato usa id round-scoped `R{n}-F1` para no fusionar fallbacks de rondas distintas.
+- **Evidencias**: `_split_hypothesis_block` (graph.py) separa el texto de la hipótesis de las líneas `[tool:...]` (máx. 5, 250 chars c/u).
+- **Transiciones**: creación en `_extract_hypotheses`; cambios de estado en `skeptic_agent` (que ahora devuelve **solo** las hipótesis modificadas; el reducer fusiona).
+- **Evento SSE `hypothesis_update`**: emitido en `stream_debate_events()` tras el `agent_completed` de cualquier nodo cuyo update traiga `hypotheses`; payload = snapshot completo deduplicado (`model_dump(by_alias=True)`, reconstruido con el propio reducer porque los updates del stream son parciales). No es efímero → se persiste y el replay reconstruye el mapa.
 
-1. Arreglar reducer: reemplazar `_append_list` por un reducer merge-by-id en `hypotheses`
-2. Estabilizar IDs: prefijo con ronda (`R1-H1`) o hash del texto en `_extract_hypotheses`
-3. Actualizar `round` en transiciones dentro del escéptico
-4. Emitir evento SSE `hypothesis_update` desde `stream_debate_events()` (no efímero → persiste)
-5. Poblar `supporting_evidence` desde el texto del diagnóstico/escéptico
-6. Integrar la vista como pestaña en `index.html` / `app.js` consumiendo los nuevos eventos
+### Exclusión deliberada
+
+`diagnostic_rebuttal_agent` no actualiza hipótesis: su salida es texto libre sin formato parseable. La emisión SSE es genérica (cualquier `node_update` con `hypotheses`), así que incorporarlo solo requiere que el nodo devuelva hipótesis.
+
+### Frontend: pestaña Mapa
+
+- **`static/js/hypothesis-map.js`** — módulo IIFE que expone `window.HypoMap` con `setTopic / update / setDecision / reset / show`.
+- Layout `concentric` determinista: topic al centro, anillo = ronda de creación. Render incremental (`cy.add()` / `node.data()`, sin destroy+rebuild); `fit` solo en el primer layout para no robar el zoom al usuario.
+- Lazy-init obligatorio: el contenedor nace oculto (Cytoscape mediría 0×0); `show()` crea/resizea y sincroniza si hay updates pendientes (dirty flag).
+- Filtro de ronda dinámico (clase `.dimmed`), panel lateral de detalle (evidencias, motivo de rechazo, historial de transiciones), tooltip con texto completo, replay de transiciones de estado (no solo apariciones).
+- Hipótesis líder: Jaccard de tokens entre `moderator_decision.leading_hypothesis` y `h.text`; score ≥ 0.3 marca el nodo con halo `.leader`; siempre se muestra la franja superior con el texto del moderador.
+- Wiring en `app.js`: rama `hypothesis_update` en `renderEvent` (early-return, antes de `closeToolGroup`), `setTopic` en `run_started`, `setDecision` en `moderator_decision`, `reset` en `clearThread()`, `show` al activar la pestaña.
+
+---
+
+## Capacidad diagnóstica y economía de tokens
+
+### Prompting metodológico (templates v2)
+
+Los 10 YAML (`prompt_templates/{default,performance,errors,data,security}.{es,en}.yaml`, `version: 2`)
+comparten un bloque común marcado con `# --- Metodología v1 ... ---` (replicado, NO compuesto:
+los archivos son autocontenidos para no romper overrides custom; mantener sincronizado a mano):
+
+- `diagnostic_system` → bloque "Metodología": cronología primero (git_recent_changes + correlación),
+  diagnóstico diferencial (≥2 alternativas), priorización información/coste, guía herramienta→señal.
+  En `performance` se omite el bullet de cronología (su "Foco" ya lo cubre).
+- `skeptic_system` → test discriminante entre hipótesis competitivas + no re-abrir rechazadas sin evidencia nueva.
+- `moderator_system` → escala interpretativa de confianza (<0.3 conjetura / 0.3-0.6 plausible /
+  0.6-0.8 probable / >0.8 confirmada) + usar las P de los agentes como input.
+
+### ToolCache (runtime.py)
+
+Caché por run de resultados de tools, compartida entre agentes: `RunControl.tool_cache`
+(CLI sin control → caché local efímera por bucle). Hit solo si **misma ronda** y edad ≤ 300 s;
+solo se cachean ejecuciones con `error=False` y approval auto/approved. Un hit no re-ejecuta ni
+re-pide aprobación; se registra con `approval="cached"` (audit + tool_calls_log + evento `tool_call`
+con `cached: true`, badge «caché» en la UI). El resultado servido lleva el prefijo
+`[cached: ya ejecutado por <rol> en ronda <n>]` visible para el LLM.
+
+### Reducción de redundancia en prompts
+
+- `_history_before_current_round` (graph.py): skeptic/rebuttal/moderator reciben el history SOLO
+  hasta la ronda anterior (+ comentarios `role=="user"` de la actual) — sus respuestas de la ronda
+  en curso ya van explícitas en el prompt. El diagnóstico recibe history completo.
+  OJO: el rol del rebuttal en history es `"diagnostic_rebuttal"` (sin `_agent`).
+- **Compresión desde ronda 2** (`_history_mode`): comprimido si hay summary y round ≥ 2. En modo
+  comprimido el "history" que se pasa a los prompts es solo la cola tras el último moderador
+  (comentarios HITL); `format_history` renderiza summary + esa cola.
+- `summarize_history`: la ronda terminada se deriva del history (`finished_round = nº de mensajes
+  moderator`), NO de `state["round"]` (el moderador ya lo incrementó con `continue` — bug histórico
+  que impedía generar el resumen). El resumen es **acumulativo**: integra el summary previo con los
+  mensajes nuevos en ≤400 palabras.
+- Los tres `*_deliver` (prompts.py) piden ~600 palabras máximo y citar tools resumidas.
+- `_truncate` (tools.py) conserva 2/3 cabeza + 1/3 cola del output (antes cortaba solo el principio).
 
 ---
 

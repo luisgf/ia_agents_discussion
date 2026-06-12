@@ -38,9 +38,13 @@ _MAX_OUT = 4_000
 
 
 def _truncate(text: str) -> str:
+    """Keep head + tail within the budget: the end of logs/commands often carries the signal."""
     if len(text) <= _MAX_OUT:
         return text
-    return text[:_MAX_OUT] + f"\n... [truncated — {len(text)} chars total]"
+    head = (_MAX_OUT * 2) // 3
+    tail = _MAX_OUT - head
+    omitted = len(text) - head - tail
+    return text[:head] + f"\n... [truncated — {omitted} of {len(text)} chars omitted] ...\n" + text[-tail:]
 
 
 def _ca_bundle() -> str | bool:

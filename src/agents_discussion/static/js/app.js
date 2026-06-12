@@ -36,6 +36,7 @@ const APPROVAL_LBL = {
   approved: ['ap-approved', 'aprobada'],
   rejected: ['ap-rejected', 'rechazada'],
   timeout:  ['ap-timeout',  'timeout'],
+  cached:   ['ap-cached',   'caché'],
 };
 
 // ── State ──────────────────────────────────────────────────────────────
@@ -66,7 +67,9 @@ const emptyState  = document.getElementById('empty-state');
 const typing      = document.getElementById('typing-indicator');
 const typingLbl   = document.getElementById('typing-label');
 const tabDebate   = document.getElementById('tab-debate');
+const tabMap      = document.getElementById('tab-map');
 const tabHist     = document.getElementById('tab-hist');
+const mapPanel    = document.getElementById('map-panel');
 const btnExport   = document.getElementById('btn-export');
 const btnResume   = document.getElementById('btn-resume');
 const resumePanel = document.getElementById('resume-panel');
@@ -101,6 +104,10 @@ function initMobileSidebar() {
     mobileOverlay.classList.remove('open');
   });
   tabHist.addEventListener('click', () => {
+    sidebar.classList.remove('open');
+    mobileOverlay.classList.remove('open');
+  });
+  tabMap.addEventListener('click', () => {
     sidebar.classList.remove('open');
     mobileOverlay.classList.remove('open');
   });
@@ -170,6 +177,7 @@ function clearThread() {
   hitlBanner = null;
   hidePostRunActions();
   hideResumePanel();
+  HypoMap.reset();
 }
 
 function addRoundSep(round, total) {
@@ -199,22 +207,38 @@ const CHEVRON = '<svg class="acard-chevron" width="14" height="14" viewBox="0 0 
 
 // ── Tab switching ──────────────────────────────────────────────────────
 tabDebate.addEventListener('click', showDebateTab);
+tabMap.addEventListener('click', showMapTab);
 tabHist.addEventListener('click', showHistoryTab);
 
 function showDebateTab() {
   activeTab = 'debate';
   tabDebate.classList.add('active');
   tabHist.classList.remove('active');
+  tabMap.classList.remove('active');
   thread.style.display = 'flex';
   histPanel.classList.remove('active');
+  mapPanel.classList.remove('active');
+}
+
+function showMapTab() {
+  activeTab = 'map';
+  tabMap.classList.add('active');
+  tabDebate.classList.remove('active');
+  tabHist.classList.remove('active');
+  thread.style.display = 'none';
+  histPanel.classList.remove('active');
+  mapPanel.classList.add('active');
+  HypoMap.show();
 }
 
 function showHistoryTab() {
   activeTab = 'history';
   tabHist.classList.add('active');
   tabDebate.classList.remove('active');
+  tabMap.classList.remove('active');
   thread.style.display = 'none';
   histPanel.classList.add('active');
+  mapPanel.classList.remove('active');
   loadHistory();
 }
 
@@ -895,6 +919,11 @@ function renderEvent(ev) {
     return;
   }
 
+  if (ev.type === 'hypothesis_update') {
+    HypoMap.update(ev);
+    return;
+  }
+
   closeToolGroup();
 
   if (ev.type === 'tool_approval_request') {
@@ -974,6 +1003,7 @@ function renderEvent(ev) {
   if (ev.type === 'run_started') {
     maxRounds = ev.max_rounds;
     curRound  = 1;
+    HypoMap.setTopic(ev.topic);
     if (isLive) setStatus('running', 'Ronda 1 de ' + maxRounds);
 
     const hdr = document.createElement('div');
@@ -997,6 +1027,7 @@ function renderEvent(ev) {
 
   } else if (ev.type === 'moderator_decision') {
     const d = ev.decision || {};
+    HypoMap.setDecision(d);
     push(buildModCard(d, curRound));
 
     if (d.status === 'continue') {

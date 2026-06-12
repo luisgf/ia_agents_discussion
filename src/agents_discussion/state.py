@@ -1,6 +1,6 @@
 from typing import Annotated, Literal, TypedDict
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class DebateMessage(BaseModel):
@@ -16,7 +16,19 @@ class ToolCallEntry(TypedDict):
     args: dict       # arguments passed to the tool
     result: str      # truncated output / error message
     error: bool      # True when the tool raised an exception
-    approval: str    # auto | approved | rejected | timeout
+    approval: str    # auto | approved | rejected | timeout | cached
+
+
+class HypothesisTransition(BaseModel):
+    """State change of a hypothesis at a given round. Serialize with by_alias=True (``from`` is reserved)."""
+
+    model_config = ConfigDict(populate_by_name=True)
+
+    round: int = Field(description="Round in which the transition happened.")
+    from_state: str | None = Field(default=None, alias="from", description="Previous state; None on creation.")
+    to_state: str = Field(alias="to", description="New state.")
+    agent: str = Field(description="Agent/node that caused the transition.")
+    note: str = Field(default="", description="Short rationale for the transition.")
 
 
 class Hypothesis(BaseModel):
@@ -27,9 +39,14 @@ class Hypothesis(BaseModel):
     state: Literal["active", "rejected", "confirmed"] = Field(
         default="active", description="Current state of the hypothesis.")
     proposer: str = Field(description="Agent/node that proposed this hypothesis.")
-    round: int = Field(description="Round in which this hypothesis was proposed or last updated.")
+    round: int = Field(description="Round in which this hypothesis was first proposed.")
+    # No ge/le validation: the value is clamped to [0, 1] at extraction time so a
+    # malformed LLM estimate never raises mid-run.
+    probability: float | None = Field(
+        default=None, description="Estimated probability 0-1 from the agents; None if not stated.")
     supporting_evidence: list[str] = Field(default_factory=list)
     rejected_reason: str | None = Field(default=None)
+    transitions: list[HypothesisTransition] = Field(default_factory=list)
 
 
 class FlowDirective(TypedDict):
@@ -52,6 +69,45 @@ class DebateRound(TypedDict):
 
 def _append_list(current: list | None, new: list | None) -> list:
     return (current or []) + (new or [])
+
+
+def _merge_hypotheses(
+    current: list[Hypothesis] | None,
+    new: list[Hypothesis] | None,
+) -> list[Hypothesis]:
+    """Reducer that merges hypotheses by id, keeping first-seen order.
+
+    For an existing id: creation round and proposer are preserved; state, text and
+    rejected_reason take the incoming values; evidence is unioned; transitions are
+    concatenated with dedup, dropping incoming creation transitions (from_state None)
+    so a re-emitted hypothesis does not duplicate its birth record.
+    """
+    merged: dict[str, Hypothesis] = {}
+    for h in current or []:
+        merged[h.id] = h.model_copy(deep=True)
+    for h in new or []:
+        existing = merged.get(h.id)
+        if existing is None:
+            merged[h.id] = h.model_copy(deep=True)
+            continue
+        if h.text.strip():
+            existing.text = h.text
+        existing.state = h.state
+        if h.probability is not None:
+            existing.probability = h.probability
+        existing.rejected_reason = h.rejected_reason if h.rejected_reason is not None else existing.rejected_reason
+        for ev in h.supporting_evidence:
+            if ev not in existing.supporting_evidence:
+                existing.supporting_evidence.append(ev)
+        seen = {(t.round, t.to_state, t.agent) for t in existing.transitions}
+        for t in h.transitions:
+            if t.from_state is None:
+                continue
+            key = (t.round, t.to_state, t.agent)
+            if key not in seen:
+                existing.transitions.append(t.model_copy())
+                seen.add(key)
+    return list(merged.values())
 
 
 def _merge_usage(
@@ -117,7 +173,7 @@ class DebateState(TypedDict):
     tool_calls_log: Annotated[list[ToolCallEntry], _append_list]
     final_result: str | None
     # Structured hypotheses tracked across rounds
-    hypotheses: Annotated[list[Hypothesis], _append_list]
+    hypotheses: Annotated[list[Hypothesis], _merge_hypotheses]
     # Compressed history summary for rounds > 2
     history_summary: str
     # Per-round structured log (useful for reports and summaries)

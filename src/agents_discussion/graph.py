@@ -21,15 +21,17 @@ from agents_discussion.prompts import (
     rebuttal_prompt,
     skeptic_prompt,
 )
-from agents_discussion.runtime import RunCancelled, get_control
+from agents_discussion.runtime import RunCancelled, ToolCache, get_control
 from agents_discussion.state import (
     DebateMessage,
     DebateRound,
     DebateState,
     FlowDirective,
     Hypothesis,
+    HypothesisTransition,
     ModeratorDecision,
     ToolCallEntry,
+    _merge_hypotheses,
 )
 from agents_discussion.tools import get_tools
 
@@ -128,9 +130,13 @@ def _invoke_streaming(model, messages: list, control, agent_node: str, agent_rol
 # ── Helpers for structured parsing ──────────────────────────────────────────
 
 _HYPOTHESIS_RE = re.compile(
-    r"###\s*HYPOTHESIS-([A-Za-z0-9_-]+)\s*\n\s*Text:\s*(.+?)(?=\n###|\n##|\Z)",
+    r"###\s*HYPOTHESIS-([A-Za-z0-9_-]+)"
+    r"(?:\s*\[\s*P\s*=\s*([0-9]*\.?[0-9]+)\s*\])?"
+    r"\s*\n\s*Text:\s*(.+?)(?=\n###|\n##|\Z)",
     re.IGNORECASE | re.DOTALL,
 )
+
+_SNIPPET_P_RE = re.compile(r"\[\s*P\s*=\s*([0-9]*\.?[0-9]+)\s*\]", re.IGNORECASE)
 
 _EARLY_OUT_RE = re.compile(
     r"EARLY_OUT_RECOMMENDED:\s*(true|yes|1)",
@@ -148,33 +154,81 @@ _EARLY_RATIONALE_RE = re.compile(
 )
 
 
+_EVIDENCE_LINE_RE = re.compile(r"\[tool:[^\]]+\]")
+
+_MAX_EVIDENCE_PER_HYPOTHESIS = 5
+_MAX_EVIDENCE_CHARS = 250
+
+
+def _split_hypothesis_block(block: str) -> tuple[str, list[str]]:
+    """Split a captured hypothesis block into text and supporting evidence lines.
+
+    The regex captures everything after ``Text:`` up to the next heading, so the
+    block may include the agent's supporting observations. The hypothesis text is
+    the first paragraph; lines citing tool outputs ([tool:<name>]) become evidence.
+    """
+    first_para, _, rest = block.partition("\n\n")
+    text = " ".join(line.strip() for line in first_para.strip().splitlines() if line.strip())
+    evidence: list[str] = []
+    for line in rest.splitlines():
+        line = line.strip().lstrip("-·* ").strip()
+        if line and _EVIDENCE_LINE_RE.search(line) and line not in evidence:
+            evidence.append(line[:_MAX_EVIDENCE_CHARS])
+            if len(evidence) >= _MAX_EVIDENCE_PER_HYPOTHESIS:
+                break
+    return text, evidence
+
+
+def _parse_probability(raw: str | None) -> float | None:
+    """Clamp an LLM-emitted probability to [0, 1]; None when absent or unparsable."""
+    if not raw:
+        return None
+    try:
+        return min(max(float(raw), 0.0), 1.0)
+    except ValueError:
+        return None
+
+
+def _creation_transition(proposer: str, round_number: int) -> HypothesisTransition:
+    return HypothesisTransition(
+        round=round_number, from_state=None, to_state="active",
+        agent=proposer, note="Hipótesis propuesta",
+    )
+
+
 def _extract_hypotheses(text: str, proposer: str, round_number: int) -> list[Hypothesis]:
     """Extract structured hypotheses from agent text response."""
     hypotheses: list[Hypothesis] = []
     matches = list(_HYPOTHESIS_RE.finditer(text))
     # If no structured format found, fall back to extracting the first bold/heading line
     if not matches:
-        # Try to find a leading hypothesis in the first paragraph
+        # Try to find a leading hypothesis in the first paragraph.
+        # Round-scoped id: a fallback id has no LLM references to preserve, and a
+        # fixed "H-1" would falsely merge unrelated fallbacks across rounds.
         first_para = text.split("\n\n")[0] if text else ""
         if first_para:
             hypotheses.append(Hypothesis(
-                id="H-1",
+                id=f"R{round_number}-F1",
                 text=first_para.strip(),
                 state="active",
                 proposer=proposer,
                 round=round_number,
+                transitions=[_creation_transition(proposer, round_number)],
             ))
         return hypotheses
 
-    for i, match in enumerate(matches):
+    for match in matches:
         hyp_id = match.group(1).strip()
-        hyp_text = match.group(2).strip()
+        hyp_text, evidence = _split_hypothesis_block(match.group(3))
         hypotheses.append(Hypothesis(
             id=hyp_id,
             text=hyp_text,
             state="active",
             proposer=proposer,
             round=round_number,
+            probability=_parse_probability(match.group(2)),
+            supporting_evidence=evidence,
+            transitions=[_creation_transition(proposer, round_number)],
         ))
     return hypotheses
 
@@ -208,20 +262,37 @@ def _last_round_messages(history: list[DebateMessage], current_round: int) -> li
     return history
 
 
-def _build_compressed_history_prompt(
-    summary: str,
-    last_messages: list[DebateMessage],
-    language: str = "es",
-) -> str:
-    """Build the history section for a prompt using compression."""
-    from agents_discussion.prompts import format_history
-    return format_history(
-        [],  # We don't pass full history when compressed
-        language=language,
-        history_summary=summary,
-        last_round_messages=last_messages,
-        mode="compressed",
-    )
+# Roles written to history by the current round's agents (the rebuttal writes
+# "diagnostic_rebuttal", not "diagnostic_rebuttal_agent").
+_AGENT_HISTORY_ROLES = frozenset({"diagnostic_agent", "skeptic_agent", "diagnostic_rebuttal"})
+
+
+def _history_before_current_round(history: list[DebateMessage], current_round: int) -> list[DebateMessage]:
+    """History up to the end of the previous round, plus user comments of the current one.
+
+    Used by agents whose prompt already includes the current round's responses
+    explicitly (skeptic, rebuttal, moderator) so they are not duplicated.
+    HITL user comments injected after the previous moderator are preserved.
+    """
+    if not history:
+        return []
+    mod_count = 0
+    for i, msg in enumerate(history):
+        if msg.role == "moderator":
+            mod_count += 1
+            if mod_count == current_round - 1:
+                return history[:i + 1] + [m for m in history[i + 1:] if m.role == "user"]
+    # Round 1 (or resume preamble without moderator messages): drop only the
+    # current round's agent messages.
+    return [m for m in history if m.role not in _AGENT_HISTORY_ROLES]
+
+
+def _messages_after_last_moderator(history: list[DebateMessage]) -> list[DebateMessage]:
+    """Messages of the round in progress (everything after the last moderator decision)."""
+    for i in range(len(history) - 1, -1, -1):
+        if history[i].role == "moderator":
+            return history[i + 1:]
+    return list(history)
 
 
 # ── ReAct loop (unchanged core) ─────────────────────────────────────────────
@@ -232,6 +303,7 @@ def _run_with_tools(
     system_prompt: str,
     user_message: str,
     run_id: str = "",
+    round_number: int = 0,
 ) -> tuple[str, list[ToolCallEntry], dict[str, int]]:
     """Run a model in a ReAct loop: LLM → tool call(s) → LLM → … → final text.
 
@@ -241,6 +313,8 @@ def _run_with_tools(
     """
     settings = get_settings()
     control = get_control(run_id)
+    # CLI runs (no control) still get an ephemeral cache → intra-loop dedup.
+    tool_cache = control.tool_cache if control is not None else ToolCache()
     tools = get_tools() if settings.tools_enabled else []
     model = model_factory()
     if tools:
@@ -323,9 +397,20 @@ def _run_with_tools(
 
             tool_fn = tool_map.get(tool_name)
             approval = "auto"
+            cache_hit = tool_cache.get(tool_name, tool_args, round_number) if tool_fn is not None else None
             if tool_fn is None:
                 result = f"Unknown tool: {tool_name}"
                 error = True
+            elif cache_hit is not None:
+                # Same command already approved and executed this round: serve the
+                # stored output without re-executing or re-asking for approval.
+                result = (
+                    f"[cached: ya ejecutado por {cache_hit.agent_role} en ronda {cache_hit.round}]\n"
+                    f"{cache_hit.result}"
+                )
+                error = False
+                approval = "cached"
+                duration_ms = 0
             elif control is not None and control.needs_approval(tool_name):
                 approved, approval = control.request_approval(tool_name, tool_args, agent_role)
                 if approved:
@@ -340,6 +425,9 @@ def _run_with_tools(
                     error = False
             else:
                 result, error = _execute(tool_fn)
+
+            if not error and approval in ("auto", "approved"):
+                tool_cache.put(tool_name, tool_args, result, agent_node, agent_role, round_number)
 
             audit_tool_call(run_id, agent_node, tool_name, tool_args, result, error, approval)
             entry = ToolCallEntry(
@@ -362,6 +450,7 @@ def _run_with_tools(
                     "result": result,
                     "error": error,
                     "approval": approval,
+                    "cached": approval == "cached",
                     "duration_ms": duration_ms,
                 })
             messages.append(ToolMessage(content=result, tool_call_id=call_id))
@@ -399,17 +488,41 @@ def _run_with_tools(
 
 
 def _history_mode(state: DebateState) -> tuple[str, str]:
-    """Determine history mode and summary for prompts."""
-    history = state.get("history", [])
+    """Determine history mode and summary for prompts (compressed from round 2 on)."""
     summary = state.get("history_summary", "")
     current_round = state.get("round", 1)
     compress = state.get("compress_history", True)
 
-    if not compress or current_round <= 2 or not summary:
+    if not compress or current_round < 2 or not summary:
         return "", "full"
+    return summary, "compressed"
 
-    last_msgs = _last_round_messages(history, current_round)
-    return summary, "compressed" if last_msgs else "full"
+
+def _prompt_history(
+    state: DebateState,
+    *,
+    exclude_current_round: bool,
+) -> tuple[list[DebateMessage], str, str]:
+    """Return (history_for_prompt, summary, mode) for an agent prompt.
+
+    In compressed mode the summary replaces finished rounds, so only the
+    messages after the last moderator decision are passed (the in-progress
+    round). With exclude_current_round=True (skeptic/rebuttal/moderator,
+    whose prompts already carry the current responses explicitly) only the
+    user's HITL comments survive from that tail.
+    """
+    history = state.get("history", [])
+    summary, mode = _history_mode(state)
+    if mode == "compressed":
+        tail = _messages_after_last_moderator(history)
+        if exclude_current_round:
+            tail = [m for m in tail if m.role == "user"]
+        else:
+            tail = [m for m in tail if m.role not in _AGENT_HISTORY_ROLES]
+        return tail, summary, mode
+    if exclude_current_round:
+        return _history_before_current_round(history, state.get("round", 1)), summary, mode
+    return history, summary, mode
 
 
 def diagnostic_agent(state: DebateState) -> dict[str, object]:
@@ -418,18 +531,20 @@ def diagnostic_agent(state: DebateState) -> dict[str, object]:
         state, "diagnostic_reasoning_effort", state["diagnostic_model"],
         "diagnostic_agent", "Diagnóstico Principal",
     )
-    history_summary, mode = _history_mode(state)
+    prompt_history, history_summary, mode = _prompt_history(state, exclude_current_round=False)
     content, tool_log, usage = _run_with_tools(
         lambda: create_github_model(state["diagnostic_model"], temperature=0.2, reasoning_effort=effort),
         "diagnostic_agent",
         template.diagnostic_system,
         diagnostic_prompt(
-            state["topic"], state["context"], state["round"], state["history"],
+            state["topic"], state["context"], state["round"], prompt_history,
+            hypotheses=state.get("hypotheses", []),
             language=state.get("language", "es"),
             history_summary=history_summary,
             mode=mode,
         ),
         run_id=state.get("run_id", ""),
+        round_number=state["round"],
     )
 
     # Extract structured hypotheses and early-out signal
@@ -481,37 +596,57 @@ def skeptic_agent(state: DebateState) -> dict[str, object]:
         state, "skeptic_reasoning_effort", state["skeptic_model"],
         "skeptic_agent", "Revisor Escéptico",
     )
-    history_summary, mode = _history_mode(state)
+    prompt_history, history_summary, mode = _prompt_history(state, exclude_current_round=True)
     content, tool_log, usage = _run_with_tools(
         lambda: create_github_model(state["skeptic_model"], temperature=0.1, reasoning_effort=effort),
         "skeptic_agent",
         template.skeptic_system,
         skeptic_prompt(
             state["topic"], state["context"], state["diagnostic_response"],
-            state.get("hypotheses", []), state["history"],
+            state.get("hypotheses", []), prompt_history,
             language=state.get("language", "es"),
             history_summary=history_summary,
             mode=mode,
         ),
         run_id=state.get("run_id", ""),
+        round_number=state["round"],
     )
 
     # Update hypothesis states based on skeptic feedback
-    # Simple heuristic: if skeptic mentions rejecting a hypothesis by ID, update it
+    # Simple heuristic: if skeptic mentions rejecting a hypothesis by ID, update it.
+    # Only modified hypotheses are returned; the merge-by-id reducer folds them in.
     updated_hypotheses: list[Hypothesis] = []
     for h in state.get("hypotheses", []):
-        new_h = h.model_copy() if hasattr(h, "model_copy") else Hypothesis(**h.model_dump())
-        if f"[hypothesis:{h.id}]" in content or f"HYPOTHESIS-{h.id}" in content:
-            idx = content.find(f"[hypothesis:{h.id}]")
-            if idx == -1:
-                idx = content.find(f"HYPOTHESIS-{h.id}")
-            snippet = content[idx:idx + 500] if idx >= 0 else ""
-            if re.search(r"\brejected\b|\brechazada?\b|\binválida?\b", snippet, re.IGNORECASE):
-                new_h.state = "rejected"
-                reason_match = re.search(r"[Rr]eason:\s*(.+?)(?=\n\n|\Z)", snippet, re.DOTALL)
-                new_h.rejected_reason = reason_match.group(1).strip() if reason_match else "Rechazada por el escéptico."
-            elif re.search(r"\baccepted\b|\baceptada?\b|\bconfirmada?\b", snippet, re.IGNORECASE):
-                new_h.state = "confirmed"
+        if f"[hypothesis:{h.id}]" not in content and f"HYPOTHESIS-{h.id}" not in content:
+            continue
+        idx = content.find(f"[hypothesis:{h.id}]")
+        if idx == -1:
+            idx = content.find(f"HYPOTHESIS-{h.id}")
+        snippet = content[idx:idx + 500] if idx >= 0 else ""
+        new_state: str | None = None
+        rejected_reason: str | None = None
+        if re.search(r"\brejected\b|\brechazada?\b|\binválida?\b", snippet, re.IGNORECASE):
+            new_state = "rejected"
+            reason_match = re.search(r"[Rr]eason:\s*(.+?)(?=\n\n|\Z)", snippet, re.DOTALL)
+            rejected_reason = reason_match.group(1).strip() if reason_match else "Rechazada por el escéptico."
+        elif re.search(r"\baccepted\b|\baceptada?\b|\bconfirmada?\b", snippet, re.IGNORECASE):
+            new_state = "confirmed"
+        prob_match = _SNIPPET_P_RE.search(snippet)
+        new_prob = _parse_probability(prob_match.group(1)) if prob_match else None
+        state_changed = new_state is not None and new_state != h.state
+        if not state_changed and new_prob is None:
+            continue
+        new_h = h.model_copy(deep=True)
+        if new_prob is not None:
+            new_h.probability = new_prob
+        if state_changed:
+            new_h.state = new_state
+            new_h.rejected_reason = rejected_reason
+            new_h.transitions = new_h.transitions + [HypothesisTransition(
+                round=state["round"], from_state=h.state, to_state=new_state,
+                agent="skeptic_agent",
+                note=rejected_reason or "Confirmada por el escéptico.",
+            )]
         updated_hypotheses.append(new_h)
 
     return {
@@ -536,7 +671,7 @@ def diagnostic_rebuttal_agent(state: DebateState) -> dict[str, object]:
         state, "diagnostic_reasoning_effort", state["diagnostic_model"],
         "diagnostic_rebuttal_agent", "Contrarréplica",
     )
-    history_summary, mode = _history_mode(state)
+    prompt_history, history_summary, mode = _prompt_history(state, exclude_current_round=True)
     content, tool_log, usage = _run_with_tools(
         lambda: create_github_model(state["diagnostic_model"], temperature=0.2, reasoning_effort=effort),
         "diagnostic_rebuttal_agent",
@@ -544,12 +679,13 @@ def diagnostic_rebuttal_agent(state: DebateState) -> dict[str, object]:
         rebuttal_prompt(
             state["topic"], state["context"], state["diagnostic_response"],
             state["skeptic_response"], state.get("hypotheses", []),
-            history=state["history"],
+            history=prompt_history,
             language=state.get("language", "es"),
             history_summary=history_summary,
             mode=mode,
         ),
         run_id=state.get("run_id", ""),
+        round_number=state["round"],
     )
     return {
         "diagnostic_rebuttal": content,
@@ -615,7 +751,7 @@ def moderator_agent(state: DebateState) -> dict[str, object]:
     )
     model = create_github_model(state["moderator_model"], temperature=0.0, reasoning_effort=effort)
 
-    history_summary, mode = _history_mode(state)
+    prompt_history, history_summary, mode = _prompt_history(state, exclude_current_round=True)
     prompt = moderator_prompt(
         state["topic"],
         state["context"],
@@ -627,7 +763,7 @@ def moderator_agent(state: DebateState) -> dict[str, object]:
         state["skeptic_response"],
         state["diagnostic_rebuttal"],
         hypotheses=state.get("hypotheses", []),
-        history=state["history"],
+        history=prompt_history,
         history_summary=history_summary,
         language=language,
         mode=mode,
@@ -689,26 +825,36 @@ def moderator_agent(state: DebateState) -> dict[str, object]:
 
 
 def summarize_history(state: DebateState) -> dict[str, object]:
-    """Compress history after each round when enabled and round > 2."""
+    """Compress finished rounds into a cumulative summary (runs after each round)."""
     compress = state.get("compress_history", True)
-    current_round = state["round"]
     history = state.get("history", [])
 
-    if not compress or current_round <= 2 or not history:
+    # The moderator already incremented state["round"] on "continue", so the
+    # just-finished round is derived from the history itself: one moderator
+    # message marks the end of each round.
+    finished_round = sum(1 for m in history if m.role == "moderator")
+    if not compress or finished_round < 1 or not history:
         return {}
 
-    last_msgs = _last_round_messages(history, current_round)
+    last_msgs = _last_round_messages(history, finished_round)
     if not last_msgs:
         return {}
 
+    previous_summary = state.get("history_summary", "")
+    previous_block = (
+        f"Resumen acumulado de las rondas anteriores:\n{previous_summary}\n\n"
+        if previous_summary else ""
+    )
     summary_prompt_text = (
-        "Resume los siguientes mensajes de un debate de diagnóstico técnico "
-        "en un párrafo conciso (máximo 400 palabras) que capture:\n"
+        "Resume el estado de un debate de diagnóstico técnico en un párrafo "
+        "conciso (máximo 400 palabras) que capture:\n"
         "1. Las hipótesis principales discutidas y su estado.\n"
         "2. La evidencia clave presentada.\n"
         "3. Los puntos de desacuerdo o incertidumbre pendientes.\n"
-        "No incluyas detalles de implementación del debate; enfócate en el contenido técnico.\n\n"
-        "Mensajes a resumir:\n"
+        "No incluyas detalles de implementación del debate; enfócate en el contenido técnico.\n"
+        "Integra el resumen acumulado previo (si existe) con los mensajes nuevos en un único resumen.\n\n"
+        + previous_block
+        + "Mensajes nuevos a integrar:\n"
         + "\n\n".join(f"[{m.role}]\n{m.content[:2000]}" for m in last_msgs)
     )
 
@@ -730,7 +876,7 @@ def summarize_history(state: DebateState) -> dict[str, object]:
         return {}
 
     round_log_entry = DebateRound(
-        round=current_round,
+        round=finished_round,
         diagnostic=state.get("diagnostic_response", "")[:500],
         skeptic=state.get("skeptic_response", "")[:500],
         rebuttal=state.get("diagnostic_rebuttal", "")[:500],
@@ -742,7 +888,7 @@ def summarize_history(state: DebateState) -> dict[str, object]:
         "round_log": [round_log_entry],
         "_summarize_event": {
             "type": "history_compressed",
-            "round": current_round,
+            "round": finished_round,
             "summary": summary_text,
         },
         "token_usage": {"summarize_history": sum_usage},
@@ -1013,6 +1159,11 @@ def stream_debate_events(
     # Accumulate token_usage from all node updates (reducer merges per-node dicts)
     accumulated_usage: dict[str, dict[str, int]] = {}
 
+    # Updates are partial per-node dicts, so the merged hypothesis snapshot is
+    # rebuilt here with the same reducer the graph state uses.
+    hypotheses_snapshot: list[Hypothesis] = []
+    current_round = initial_state["round"]
+
     for update in graph.stream(initial_state, _graph_config(initial_state), stream_mode="updates"):
         for node_name, node_update in update.items():
             if not node_update:
@@ -1038,12 +1189,22 @@ def stream_debate_events(
                     "role": display_name,
                     "content": content,
                 }
+                if node_update.get("hypotheses"):
+                    hypotheses_snapshot = _merge_hypotheses(hypotheses_snapshot, node_update["hypotheses"])
+                    yield {
+                        "type": "hypothesis_update",
+                        "node": node_name,
+                        "round": current_round,
+                        "hypotheses": [h.model_dump(by_alias=True) for h in hypotheses_snapshot],
+                    }
             elif node_name == "moderator_agent":
                 decision = node_update.get("moderator_decision")
                 if isinstance(decision, ModeratorDecision):
                     decision_payload = decision.model_dump()
                 else:
                     decision_payload = decision
+                if node_update.get("round") is not None:
+                    current_round = node_update["round"]
                 yield {
                     "type": "moderator_decision",
                     "node": node_name,

@@ -16,13 +16,70 @@ registered control and therefore skip gating entirely.
 """
 from __future__ import annotations
 
+import json
 import threading
+import time
 import uuid
+from dataclasses import dataclass
 from typing import Callable
 
 
 class RunCancelled(Exception):
     """Raised inside the debate when the operator cancels the run."""
+
+
+@dataclass
+class ToolCacheEntry:
+    result: str
+    agent: str
+    agent_role: str
+    round: int
+    ts: float  # time.monotonic() at insertion
+
+
+class ToolCache:
+    """Per-run cache of successful tool results, shared across agents.
+
+    A hit requires the same round (system state may change between rounds —
+    the moderator may have requested new data, HITL pauses can last minutes)
+    and an age below TTL_SECONDS (guards against long approval waits within
+    a round). Only successful, approved/auto executions are stored.
+    """
+
+    TTL_SECONDS: float = 300.0
+
+    def __init__(self) -> None:
+        self._entries: dict[str, ToolCacheEntry] = {}
+        self._lock = threading.Lock()
+
+    @staticmethod
+    def key(tool_name: str, args: dict) -> str:
+        return tool_name + ":" + json.dumps(args, sort_keys=True, ensure_ascii=False, default=str)
+
+    def get(self, tool_name: str, args: dict, current_round: int) -> ToolCacheEntry | None:
+        with self._lock:
+            entry = self._entries.get(self.key(tool_name, args))
+        if entry is None:
+            return None
+        if entry.round != current_round or time.monotonic() - entry.ts > self.TTL_SECONDS:
+            return None
+        return entry
+
+    def put(
+        self,
+        tool_name: str,
+        args: dict,
+        result: str,
+        agent: str,
+        agent_role: str,
+        round_number: int,
+    ) -> None:
+        entry = ToolCacheEntry(
+            result=result, agent=agent, agent_role=agent_role,
+            round=round_number, ts=time.monotonic(),
+        )
+        with self._lock:
+            self._entries[self.key(tool_name, args)] = entry
 
 
 class _ApprovalRequest:
@@ -64,6 +121,9 @@ class RunControl:
 
         self._warned: set[str] = set()
         self._warned_lock = threading.Lock()
+
+        # Per-run cache of tool results, shared across agents and ReAct loops.
+        self.tool_cache = ToolCache()
 
     # ── One-shot warnings (graph side) ───────────────────────────────────
 

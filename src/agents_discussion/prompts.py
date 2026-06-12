@@ -13,14 +13,20 @@ _L = {
         "history": "Historial:",
         "no_history": "Sin historial previo.",
         "history_summary": "Resumen de rondas anteriores:",
-        "last_round": "Ronda anterior completa:",
+        "last_round": "Mensajes recientes (no incluidos en el resumen):",
         "hypotheses": "Hipótesis en debate:",
         "diag_deliver": """Entrega:
 1. Hipótesis principal y alternativas. Cada hipótesis debe comenzar con:
-   ### HYPOTHESIS-<n>
+   ### HYPOTHESIS-<n> [P=<0-1>]
    Text: <descripción concisa>
+   P es tu probabilidad estimada con la evidencia ACTUAL (ej. [P=0.6]). Si la evidencia no es
+   concluyente, propón AL MENOS 2 hipótesis competitivas, ordenadas por P descendente.
+   Recalibra la P de las hipótesis existentes en cada ronda según la evidencia nueva.
    Esto permite rastrearlas estructuradamente. Puedes citarlas luego como [hypothesis:<id>].
-2. Observaciones que las soportan (cita salidas de herramientas con [tool:<nombre>]).
+   Si una hipótesis ya aparece en "Hipótesis en debate", reutiliza su id EXACTO (no la renumeres);
+   las hipótesis nuevas continúan la numeración existente, nunca reinicies en 1.
+2. Observaciones que las soportan: inclúyelas como líneas dentro del bloque de cada hipótesis,
+   citando salidas de herramientas con [tool:<nombre>].
 3. Inferencias y supuestos.
 4. Experimento mínimo para confirmar o descartar — ejecútalo con la herramienta adecuada y reporta la salida real ([tool:<nombre>]).
 5. Fix mínimo reversible si aplica. Si decides ejecutarlo, usa run_local_command o run_ssh_command (requerirá aprobación).
@@ -28,15 +34,18 @@ _L = {
    EARLY_OUT_RECOMMENDED: true
    EARLY_OUT_CONFIDENCE: 0.0-1.0
    EARLY_OUT_RATIONALE: <por qué>
-7. Riesgos y validación.""",
+7. Riesgos y validación.
+Sé denso: máximo ~600 palabras; cita las salidas de tools resumidas (líneas clave), no las pegues íntegras.""",
         "skeptic_hypothesis": "Hipótesis del diagnóstico principal:",
         "skeptic_deliver": """Para cada hipótesis listada (por su id [hypothesis:<id>]), entrega:
-1. Estado: accepted | rejected | needs_evidence
+1. Estado: accepted | rejected | needs_evidence, y tu probabilidad recalibrada
+   tras la revisión como [P=<0-1>] junto al id.
 2. Justificación técnica.
 3. Causas alternativas plausibles.
 4. Evidencia faltante crítica.
 5. Riesgos del experimento o fix.
-6. Prueba concreta que resolvería cada objeción — ejecútala con la herramienta adecuada y reporta la salida ([tool:<nombre>]).""",
+6. Prueba concreta que resolvería cada objeción — ejecútala con la herramienta adecuada y reporta la salida ([tool:<nombre>]).
+Sé denso: máximo ~600 palabras; cita las salidas de tools resumidas (líneas clave), no las pegues íntegras.""",
         "rebuttal_initial": "Tu hipótesis inicial:",
         "rebuttal_critique": "Crítica escéptica:",
         "rebuttal_deliver": """Entrega una contrarréplica técnica:
@@ -44,7 +53,8 @@ _L = {
 2. Qué hipótesis descartas y por qué.
 3. Hipótesis principal actualizada.
 4. Experimento o fix mínimo actualizado.
-5. Validación y rollback.""",
+5. Validación y rollback.
+Sé denso: máximo ~600 palabras; cita las salidas de tools resumidas (líneas clave), no las pegues íntegras.""",
         "mod_round": "Ronda actual:",
         "mod_max_rounds": "Máximo de rondas:",
         "mod_threshold": "Umbral de confianza para cerrar:",
@@ -73,14 +83,20 @@ _L = {
         "history": "History:",
         "no_history": "No previous history.",
         "history_summary": "Summary of previous rounds:",
-        "last_round": "Last round in full:",
+        "last_round": "Recent messages (not covered by the summary):",
         "hypotheses": "Hypotheses under debate:",
         "diag_deliver": """Deliver:
 1. Leading hypothesis and alternatives. Each hypothesis must start with:
-   ### HYPOTHESIS-<n>
+   ### HYPOTHESIS-<n> [P=<0-1>]
    Text: <concise description>
+   P is your estimated probability given the CURRENT evidence (e.g. [P=0.6]). If the evidence is
+   not conclusive, propose AT LEAST 2 competing hypotheses, ordered by descending P.
+   Recalibrate the P of existing hypotheses each round as new evidence arrives.
    This enables structured tracking. You may reference them later as [hypothesis:<id>].
-2. Supporting observations (cite tool outputs with [tool:<name>]).
+   If a hypothesis already appears under "Hypotheses under debate", reuse its EXACT id (do not renumber);
+   new hypotheses continue the existing numbering, never restart at 1.
+2. Supporting observations: include them as lines inside each hypothesis block,
+   citing tool outputs with [tool:<name>].
 3. Inferences and assumptions.
 4. Minimal experiment to confirm or discard — run it with the appropriate tool and report the real output ([tool:<name>]).
 5. Minimal reversible fix if applicable. If you execute it, use run_local_command or run_ssh_command (operator approval required).
@@ -88,15 +104,18 @@ _L = {
    EARLY_OUT_RECOMMENDED: true
    EARLY_OUT_CONFIDENCE: 0.0-1.0
    EARLY_OUT_RATIONALE: <why>
-7. Risks and validation.""",
+7. Risks and validation.
+Be dense: ~600 words max; quote tool outputs summarized (key lines only), never paste them verbatim.""",
         "skeptic_hypothesis": "Leading diagnostic hypotheses:",
         "skeptic_deliver": """For each listed hypothesis (by its id [hypothesis:<id>]), deliver:
-1. State: accepted | rejected | needs_evidence
+1. State: accepted | rejected | needs_evidence, plus your recalibrated probability
+   after review as [P=<0-1>] next to the id.
 2. Technical justification.
 3. Plausible alternative causes.
 4. Critical missing evidence.
 5. Risks of the experiment or fix.
-6. Concrete test that would resolve each objection — run it with the appropriate tool and report the output ([tool:<name>]).""",
+6. Concrete test that would resolve each objection — run it with the appropriate tool and report the output ([tool:<name>]).
+Be dense: ~600 words max; quote tool outputs summarized (key lines only), never paste them verbatim.""",
         "rebuttal_initial": "Your initial hypothesis:",
         "rebuttal_critique": "Skeptical critique:",
         "rebuttal_deliver": """Deliver a technical rebuttal:
@@ -104,7 +123,8 @@ _L = {
 2. Which hypotheses you discard and why.
 3. Updated leading hypothesis.
 4. Updated minimal experiment or fix.
-5. Validation and rollback.""",
+5. Validation and rollback.
+Be dense: ~600 words max; quote tool outputs summarized (key lines only), never paste them verbatim.""",
         "mod_round": "Current round:",
         "mod_max_rounds": "Maximum rounds:",
         "mod_threshold": "Confidence threshold to close:",
@@ -157,25 +177,24 @@ def format_history(
     history: list[object],
     language: str = "es",
     history_summary: str = "",
-    last_round_messages: list[object] | None = None,
     mode: str = "full",
 ) -> str:
-    if not history:
-        return _labels(language)["no_history"]
     if mode == "compressed" and history_summary:
+        # The summary covers finished rounds; `history` carries only the recent
+        # tail the caller wants verbatim (e.g. HITL comments of the new round).
         lines = [
             _labels(language)["history_summary"],
             history_summary,
         ]
-        if last_round_messages:
+        if history:
             lines.append("")
             lines.append(_labels(language)["last_round"])
             lines.append(
-                "\n\n".join(
-                    f"[{item.role}]\n{item.content}" for item in last_round_messages
-                )
+                "\n\n".join(f"[{item.role}]\n{item.content}" for item in history)
             )
         return "\n".join(lines)
+    if not history:
+        return _labels(language)["no_history"]
     return "\n\n".join(f"[{item.role}]\n{item.content}" for item in history)
 
 
@@ -185,7 +204,9 @@ def _format_hypotheses(hypotheses: list[object], language: str = "es") -> str:
     lines = []
     for h in hypotheses:
         status = f"[{h.state}]" if hasattr(h, "state") else ""
-        lines.append(f"- {h.id} {status}: {h.text}")
+        probability = getattr(h, "probability", None)
+        prob = f" [P={probability:.2f}]" if probability is not None else ""
+        lines.append(f"- {h.id} {status}{prob}: {h.text}")
         if getattr(h, "supporting_evidence", None):
             for ev in h.supporting_evidence:
                 lines.append(f"    · {ev}")
@@ -199,6 +220,7 @@ def diagnostic_prompt(
     context: str,
     round_number: int,
     history: list[object],
+    hypotheses: list[object] | None = None,
     language: str = "es",
     history_summary: str = "",
     mode: str = "full",
@@ -212,6 +234,9 @@ def diagnostic_prompt(
 {context or t["no_context"]}
 
 {t["round"]} {round_number}
+
+{t["hypotheses"]}
+{_format_hypotheses(hypotheses or [], language)}
 
 {t["history"]}
 {format_history(history, language, history_summary, mode=mode)}
