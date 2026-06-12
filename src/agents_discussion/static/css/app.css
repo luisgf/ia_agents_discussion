@@ -504,6 +504,7 @@ details.adv > summary::-webkit-details-marker { display: none; }
 /* Running tool card — shown between tool_call_started and its result */
 .tc-card.tc-running { border-left-style: dashed; }
 .tc-spin {
+  display: inline-block;
   width: 11px; height: 11px; flex-shrink: 0;
   border: 1.5px solid var(--border); border-top-color: var(--dim);
   border-radius: 50%;
@@ -730,6 +731,49 @@ details.adv > summary::-webkit-details-marker { display: none; }
   font-size: 12px; color: var(--dim); flex-shrink: 0;
 }
 
+/* ── Run timing bar (replay view) ───────────────────────────── */
+.run-timing-bar {
+  background: var(--s1); border: 1px solid var(--border);
+  border-top: none; padding: 7px 14px; margin-bottom: 14px;
+  display: flex; align-items: center; gap: 18px; flex-wrap: wrap;
+  font-size: 11px; color: var(--dim);
+}
+.run-timing-bar span { white-space: nowrap; }
+.run-timing-bar strong { color: var(--text); font-weight: 500; }
+
+/* ── Token stats card (detail view) ─────────────────────────── */
+.token-stats-card {
+  border: 1px solid var(--border); margin-bottom: 14px;
+  flex-shrink: 0;
+}
+.token-stats-head {
+  padding: 8px 14px; background: var(--s1);
+  border-bottom: 1px solid var(--border);
+  font-size: 10px; font-weight: 400; text-transform: uppercase;
+  letter-spacing: .1em; color: var(--muted);
+  display: flex; align-items: center; gap: 8px;
+}
+.token-stats-table { width: 100%; border-collapse: collapse; }
+.token-stats-table th {
+  text-align: right; font-size: 10px; font-weight: 400;
+  text-transform: uppercase; letter-spacing: .08em;
+  color: var(--muted); padding: 5px 10px;
+  border-bottom: 1px solid var(--border);
+}
+.token-stats-table th:first-child { text-align: left; }
+.token-stats-table td {
+  padding: 5px 10px; font-size: 12px; color: var(--text);
+  border-bottom: 1px solid var(--border); text-align: right;
+}
+.token-stats-table td:first-child { text-align: left; color: var(--dim); }
+.token-stats-table tr:last-child td { border-bottom: none; }
+.token-stats-total { font-weight: 500; color: var(--text); }
+.token-stats-cost {
+  padding: 7px 14px; font-size: 11px; color: var(--dim);
+  border-top: 1px solid var(--border); display: flex; gap: 16px; flex-wrap: wrap;
+}
+.token-stats-cost strong { color: var(--text); }
+
 /* ── History panel ──────────────────────────────────────────── */
 #hist-panel {
   flex: 1; overflow-y: auto;
@@ -762,7 +806,9 @@ details.adv > summary::-webkit-details-marker { display: none; }
   max-width: 360px; overflow: hidden;
   text-overflow: ellipsis; white-space: nowrap;
 }
-.hist-date   { font-size: 11px; color: var(--dim); white-space: nowrap; }
+.hist-date     { font-size: 11px; color: var(--dim); white-space: nowrap; }
+.hist-duration { font-size: 11px; color: var(--dim); white-space: nowrap; }
+.hist-tokens   { font-size: 10px; color: var(--muted); white-space: nowrap; }
 .hist-models {
   font-size: 11px; color: var(--dim);
   max-width: 160px; overflow: hidden;
@@ -807,51 +853,119 @@ details.adv > summary::-webkit-details-marker { display: none; }
 }
 
 /* ── Responsive ─────────────────────────────────────────────── */
+
+/* Botón hamburguesa (oculto en desktop) */
+.mobile-menu-btn {
+  display: none;
+  position: absolute; top: 18px; right: 14px;
+  background: transparent; border: none;
+  font-size: 20px; cursor: pointer; color: var(--text);
+  line-height: 1; z-index: 10;
+}
+
+/* Overlay oscuro cuando el sidebar está abierto en móvil */
+.mobile-overlay {
+  display: none;
+  position: fixed; inset: 0; background: rgba(0,0,0,0.35);
+  z-index: 40; opacity: 0; transition: opacity .3s ease;
+}
+.mobile-overlay.open { display: block; opacity: 1; }
+
 @media (max-width: 820px) {
-  body { overflow: auto; }
-  .app { grid-template-columns: 1fr; height: auto; }
-  .sidebar { height: auto; max-height: 55vh; }
-  .convo { height: 60vh; }
+  html, body { overflow: hidden; height: 100%; }
+
+  .app {
+    grid-template-columns: 1fr;
+    display: flex; flex-direction: column;
+    height: 100vh;
+  }
+
+  /* Sidebar se convierte en drawer off-canvas */
+  .sidebar {
+    position: fixed; top: 0; left: 0; bottom: 0;
+    width: 85%; max-width: 320px; min-width: 260px;
+    z-index: 50;
+    transform: translateX(-100%);
+    transition: transform .35s cubic-bezier(.4,0,.2,1);
+    box-shadow: 4px 0 20px rgba(0,0,0,0.15);
+    border-right: 1px solid var(--border);
+    background: var(--bg);
+    height: 100vh; max-height: 100vh;
+  }
+  .sidebar.open { transform: translateX(0); }
+
+  .sidebar-head {
+    position: relative;
+    padding-right: 44px; /* espacio para el botón */
+  }
+
+  .mobile-menu-btn { display: block; }
+
+  /* La conversación ocupa toda la pantalla */
+  .convo {
+    flex: 1;
+    overflow: hidden;
+    height: 100vh;
+    width: 100%;
+  }
+
+  /* Tabs con más padding táctil */
+  .convo-tabs { padding: 0 14px; }
+  .tab-btn { padding: 16px 12px 14px; font-size: 11px; }
+
+  /* Thread / History con padding reducido */
+  #thread,
+  #hist-panel { padding: 14px 14px 24px; }
+
+  /* Tool call wrappers más compactos */
+  .tc-wrapper,
+  .tc-group,
+  .appr-card { margin-left: 8px; margin-right: 8px; }
+
+  /* Tarjetas de agente más limpias */
+  .acard-head { padding: 10px 12px; }
+  .card-body, .mod-body { padding: 10px 12px; font-size: 13px; }
+
+  .empty-state { padding: 36px 24px; }
+  .empty-state h2 { font-size: 11px; }
+  .empty-state p { max-width: 100%; font-size: 12px; }
+
+  /* Historial compacto */
+  .hist-table th,
+  .hist-table td { padding: 8px; }
+  .hist-topic { max-width: 160px; }
+  .hist-models { max-width: 100px; }
+  .hist-actions { flex-wrap: wrap; }
+
+  /* Panel resume */
+  .resume-panel { padding: 12px 16px; }
+
+  /* Badges no rompan */
+  .dbadge, .rbadge { font-size: 8px; padding: 2px 5px; }
+
+  /* Stack para stats finales */
+  .final-stats { grid-template-columns: repeat(3, 1fr); }
+
+  /* Conf row */
+  .conf-row { padding: 8px 12px; gap: 8px; }
+  .conf-track { height: 3px; }
+  .conf-val { min-width: 32px; font-size: 11px; }
+
+  /* Botones más táctiles */
+  .btn-run, .btn-stop { padding: 14px 16px; font-size: 12px; }
+
+  /* Mod row2 apilado */
+  .mod-row2 { grid-template-columns: 1fr; gap: 10px; }
 }
 
-/* ── Auth modal ───────────────────────────────────────────── */
-.modal-overlay {
-  position: fixed; inset: 0; background: rgba(0,0,0,0.5);
-  display: flex; align-items: center; justify-content: center; z-index: 1000;
+@media (max-width: 480px) {
+  .brand-sub { display: none; }
+  .brand { gap: 8px; }
+  .sidebar-head { padding: 14px 44px 14px 14px; }
+  .two-col { grid-template-columns: 1fr; }
+  .final-stats { grid-template-columns: 1fr; }
+  .fstat { border-right: none; border-bottom: 1px solid var(--border); }
+  .fstat:last-child { border-bottom: none; }
+  .hist-table th:nth-child(3), .hist-table td:nth-child(3),
+  .hist-table th:nth-child(4), .hist-table td:nth-child(4) { display: none; }
 }
-.modal-card {
-  background: var(--bg); border: 1px solid var(--border);
-  padding: 24px; width: 420px; max-width: 90vw;
-  box-shadow: 0 16px 48px rgba(0,0,0,0.2);
-}
-.modal-head {
-  display: flex; justify-content: space-between; align-items: center;
-  margin-bottom: 16px; border-bottom: 1px solid var(--border); padding-bottom: 12px;
-}
-.modal-head h3 { font-size: 13px; font-weight: 600; text-transform: uppercase; letter-spacing: .1em; }
-.modal-close { background: none; border: none; font-size: 20px; cursor: pointer; color: var(--dim); line-height: 1; }
-.modal-close:hover { color: var(--text); }
-.modal-body { font-size: 13px; line-height: 1.7; }
-.modal-foot { margin-top: 20px; display: flex; gap: 8px; justify-content: flex-end; }
-
-.auth-status-btn {
-  background: var(--s2); border: 1px solid var(--border);
-  padding: 4px 10px; font-size: 11px; cursor: pointer;
-  text-transform: uppercase; letter-spacing: .06em;
-  margin-top: 10px; transition: background .15s;
-}
-.auth-status-btn:hover { background: var(--s3); }
-
-.auth-ok   { color: var(--final); }
-.auth-warn { color: var(--rebuttal); }
-.auth-err  { color: var(--err); }
-
-#auth-user-code {
-  font-family: monospace; font-size: 18px; letter-spacing: 3px;
-  background: var(--s2); padding: 4px 10px; border: 1px solid var(--border);
-  display: inline-block; margin-top: 4px;
-}
-
-#auth-flow-ui p { margin-bottom: 8px; }
-#auth-flow-ui a { color: var(--diag); text-decoration: underline; }
-#auth-polling-status { font-size: 12px; margin-top: 6px; }

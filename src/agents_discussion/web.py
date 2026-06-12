@@ -86,8 +86,9 @@ class RunStore:
 
     def list_runs(self) -> list[dict]:
         """Return run metadata (no context/events) sorted newest-first."""
-        keys = ("run_id", "topic", "timestamp", "status", "models", "template",
-                "language", "parent_run_id")
+        keys = ("run_id", "topic", "timestamp", "finished_at", "duration_seconds",
+                "status", "models", "template", "language", "parent_run_id",
+                "token_totals", "cost_estimate")
         runs = []
         for p in self.data_dir.glob("*.json"):
             try:
@@ -133,6 +134,11 @@ class RunSession:
         self.events: list[dict] = []
         self._lock = threading.Lock()
         self.control: RunControl | None = None
+        self._started_monotonic: float = time.monotonic()
+        self.finished_at: str | None = None
+        self.duration_seconds: float | None = None
+        self.token_totals: dict | None = None
+        self.cost_estimate: dict | None = None
 
     @property
     def run_id(self) -> str:
@@ -152,8 +158,18 @@ class RunSession:
 
     def record(self) -> dict:
         with self._lock:
+            extra: dict = {}
+            if self.finished_at is not None:
+                extra["finished_at"] = self.finished_at
+            if self.duration_seconds is not None:
+                extra["duration_seconds"] = self.duration_seconds
+            if self.token_totals:
+                extra["token_totals"] = self.token_totals
+            if self.cost_estimate:
+                extra["cost_estimate"] = self.cost_estimate
             return {
                 **self.meta,
+                **extra,
                 "status": self.status,
                 "context": self.context,
                 "events": [e for e in self.events if e.get("type") not in _EPHEMERAL_EVENTS],
@@ -193,6 +209,12 @@ def _run_debate_sync(session: RunSession) -> None:
                 session.status = "cancelled"
                 session.publish({"type": "run_cancelled"})
                 return
+            # Capture token totals and cost estimate from run_finished event
+            if event.get("type") == "run_finished":
+                if event.get("token_totals"):
+                    session.token_totals = event["token_totals"]
+                if event.get("cost_estimate"):
+                    session.cost_estimate = event["cost_estimate"]
             session.publish(event)
         session.status = "completed"
     except RunCancelled:
@@ -207,6 +229,9 @@ async def _drive_run(session: RunSession) -> None:
     try:
         await asyncio.to_thread(_run_debate_sync, session)
     finally:
+        elapsed = time.monotonic() - session._started_monotonic
+        session.finished_at = datetime.now(timezone.utc).isoformat()
+        session.duration_seconds = round(elapsed, 1)
         store.save(session.run_id, session.record())
         unregister_control(session.run_id)
         SESSIONS.pop(session.run_id, None)

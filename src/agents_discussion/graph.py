@@ -12,6 +12,7 @@ from langgraph.graph import END, START, StateGraph
 from agents_discussion.audit import audit_tool_call
 from agents_discussion.config import get_settings
 from agents_discussion.models import _normalize_effort, create_github_model, supports_reasoning
+from agents_discussion.pricing import estimate_cost
 from agents_discussion.prompt_store import PromptTemplate, get_template
 from agents_discussion.prompts import (
     diagnostic_prompt,
@@ -85,7 +86,13 @@ def _chunk_text(content: object) -> str:
 
 
 def _invoke_streaming(model, messages: list, control, agent_node: str, agent_role: str):
-    """Invoke model with streaming to UI. Falls back to blocking invoke."""
+    """Invoke model with streaming to UI. Falls back to blocking invoke.
+
+    Returns the aggregated response object; callers can read ``response.usage_metadata``
+    to obtain token counts (``input_tokens``, ``output_tokens``, ``total_tokens``).
+    ``stream_usage=True`` is passed so the final chunk carries usage data when the
+    endpoint supports it; it is silently ignored on endpoints that do not.
+    """
     if control is None:
         return model.invoke(messages)
 
@@ -96,7 +103,7 @@ def _invoke_streaming(model, messages: list, control, agent_node: str, agent_rol
     })
     response = None
     try:
-        for chunk in model.stream(messages):
+        for chunk in model.stream(messages, stream_usage=True):
             control.raise_if_cancelled()
             response = chunk if response is None else response + chunk
             delta = _chunk_text(chunk.content)
@@ -225,8 +232,13 @@ def _run_with_tools(
     system_prompt: str,
     user_message: str,
     run_id: str = "",
-) -> tuple[str, list[ToolCallEntry]]:
-    """Run a model in a ReAct loop: LLM → tool call(s) → LLM → … → final text."""
+) -> tuple[str, list[ToolCallEntry], dict[str, int]]:
+    """Run a model in a ReAct loop: LLM → tool call(s) → LLM → … → final text.
+
+    Returns:
+        Tuple of (final_content, tool_invocation_log, token_usage_dict).
+        ``token_usage_dict`` has keys ``input_tokens``, ``output_tokens``, ``total_tokens``.
+    """
     settings = get_settings()
     control = get_control(run_id)
     tools = get_tools() if settings.tools_enabled else []
@@ -244,12 +256,23 @@ def _run_with_tools(
     consecutive_errors = 0
     agent_role = AGENT_EVENT_FIELDS.get(agent_node, ("", agent_node))[1]
 
+    # Accumulate token usage across all LLM calls in this ReAct loop
+    total_input = 0
+    total_output = 0
+    total_tokens = 0
+
     while call_count <= settings.max_tool_calls_per_agent:
         if control is not None:
             control.raise_if_cancelled()
 
         response = _invoke_streaming(model, messages, control, agent_node, agent_role)
         messages.append(response)
+
+        # Accumulate usage from this LLM call
+        usage_meta = getattr(response, "usage_metadata", None) or {}
+        total_input  += usage_meta.get("input_tokens",  0) or 0
+        total_output += usage_meta.get("output_tokens", 0) or 0
+        total_tokens += usage_meta.get("total_tokens",  0) or 0
 
         raw_calls = getattr(response, "tool_calls", None) or []
         if not raw_calls:
@@ -364,7 +387,12 @@ def _run_with_tools(
             consecutive_errors = 0
 
     content = _message_content(response)
-    return content, tool_log
+    node_usage = {
+        "input_tokens":  total_input,
+        "output_tokens": total_output,
+        "total_tokens":  total_tokens if total_tokens else (total_input + total_output),
+    }
+    return content, tool_log, node_usage
 
 
 # ── Agent nodes ──────────────────────────────────────────────────────────────
@@ -391,7 +419,7 @@ def diagnostic_agent(state: DebateState) -> dict[str, object]:
         "diagnostic_agent", "Diagnóstico Principal",
     )
     history_summary, mode = _history_mode(state)
-    content, tool_log = _run_with_tools(
+    content, tool_log, usage = _run_with_tools(
         lambda: create_github_model(state["diagnostic_model"], temperature=0.2, reasoning_effort=effort),
         "diagnostic_agent",
         template.diagnostic_system,
@@ -416,6 +444,7 @@ def diagnostic_agent(state: DebateState) -> dict[str, object]:
         "early_out_recommended": early["recommended"],
         "early_out_confidence": early["confidence"],
         "early_out_rationale": early["rationale"],
+        "token_usage": {"diagnostic_agent": usage},
     }
 
 
@@ -453,7 +482,7 @@ def skeptic_agent(state: DebateState) -> dict[str, object]:
         "skeptic_agent", "Revisor Escéptico",
     )
     history_summary, mode = _history_mode(state)
-    content, tool_log = _run_with_tools(
+    content, tool_log, usage = _run_with_tools(
         lambda: create_github_model(state["skeptic_model"], temperature=0.1, reasoning_effort=effort),
         "skeptic_agent",
         template.skeptic_system,
@@ -490,6 +519,7 @@ def skeptic_agent(state: DebateState) -> dict[str, object]:
         "history": [DebateMessage(role="skeptic_agent", content=content)],
         "tool_calls_log": tool_log,
         "hypotheses": updated_hypotheses,
+        "token_usage": {"skeptic_agent": usage},
     }
 
 
@@ -507,7 +537,7 @@ def diagnostic_rebuttal_agent(state: DebateState) -> dict[str, object]:
         "diagnostic_rebuttal_agent", "Contrarréplica",
     )
     history_summary, mode = _history_mode(state)
-    content, tool_log = _run_with_tools(
+    content, tool_log, usage = _run_with_tools(
         lambda: create_github_model(state["diagnostic_model"], temperature=0.2, reasoning_effort=effort),
         "diagnostic_rebuttal_agent",
         template.diagnostic_system,
@@ -525,6 +555,7 @@ def diagnostic_rebuttal_agent(state: DebateState) -> dict[str, object]:
         "diagnostic_rebuttal": content,
         "history": [DebateMessage(role="diagnostic_rebuttal", content=content)],
         "tool_calls_log": tool_log,
+        "token_usage": {"diagnostic_rebuttal_agent": usage},
     }
 
 
@@ -603,15 +634,25 @@ def moderator_agent(state: DebateState) -> dict[str, object]:
     )
 
     decision: ModeratorDecision | None = None
+    mod_usage: dict[str, int] = {}
     try:
-        structured = model.with_structured_output(ModeratorDecision)
+        structured = model.with_structured_output(ModeratorDecision, include_raw=True)
         result = structured.invoke(
             [
                 SystemMessage(content=template.moderator_system),
                 HumanMessage(content=prompt),
             ]
         )
-        if isinstance(result, ModeratorDecision):
+        if isinstance(result, dict) and isinstance(result.get("parsed"), ModeratorDecision):
+            decision = result["parsed"]
+            raw_msg = result.get("raw")
+            raw_usage = getattr(raw_msg, "usage_metadata", None) or {}
+            mod_usage = {
+                "input_tokens":  raw_usage.get("input_tokens",  0) or 0,
+                "output_tokens": raw_usage.get("output_tokens", 0) or 0,
+                "total_tokens":  raw_usage.get("total_tokens",  0) or 0,
+            }
+        elif isinstance(result, ModeratorDecision):
             decision = result
         else:
             _log.warning(
@@ -631,12 +672,19 @@ def moderator_agent(state: DebateState) -> dict[str, object]:
             ]
         )
         decision = _parse_moderator_response(_message_content(response))
+        fallback_usage = getattr(response, "usage_metadata", None) or {}
+        mod_usage = {
+            "input_tokens":  fallback_usage.get("input_tokens",  0) or 0,
+            "output_tokens": fallback_usage.get("output_tokens", 0) or 0,
+            "total_tokens":  fallback_usage.get("total_tokens",  0) or 0,
+        }
 
     next_round = state["round"] + 1 if decision.status == "continue" else state["round"]
     return {
         "moderator_decision": decision,
         "round": next_round,
         "history": [DebateMessage(role="moderator", content=decision.model_dump_json(indent=2))],
+        "token_usage": {"moderator_agent": mod_usage},
     }
 
 
@@ -666,10 +714,17 @@ def summarize_history(state: DebateState) -> dict[str, object]:
 
     summary_model_name = state.get("summary_model", state["moderator_model"])
     summary_text = ""
+    sum_usage: dict[str, int] = {}
     try:
         summary_model = create_github_model(summary_model_name, temperature=0.3)
         summary_response = summary_model.invoke([HumanMessage(content=summary_prompt_text)])
         summary_text = _message_content(summary_response)
+        raw_usage = getattr(summary_response, "usage_metadata", None) or {}
+        sum_usage = {
+            "input_tokens":  raw_usage.get("input_tokens",  0) or 0,
+            "output_tokens": raw_usage.get("output_tokens", 0) or 0,
+            "total_tokens":  raw_usage.get("total_tokens",  0) or 0,
+        }
     except Exception as exc:
         _log.warning("History summarization failed (%s), keeping full history", exc)
         return {}
@@ -690,6 +745,7 @@ def summarize_history(state: DebateState) -> dict[str, object]:
             "round": current_round,
             "summary": summary_text,
         },
+        "token_usage": {"summarize_history": sum_usage},
     }
 
 
@@ -863,6 +919,7 @@ def create_initial_state(
         "template": template or settings.prompt_template,
         "language": language or settings.prompt_language,
         "compress_history": getattr(settings, "compress_history", True),
+        "token_usage": {},
     }
 
 
@@ -953,10 +1010,23 @@ def stream_debate_events(
         "language": initial_state["language"],
     }
 
+    # Accumulate token_usage from all node updates (reducer merges per-node dicts)
+    accumulated_usage: dict[str, dict[str, int]] = {}
+
     for update in graph.stream(initial_state, _graph_config(initial_state), stream_mode="updates"):
         for node_name, node_update in update.items():
             if not node_update:
                 continue
+
+            # Accumulate token usage from this node update
+            node_token_usage = node_update.get("token_usage") or {}
+            for role, counts in node_token_usage.items():
+                if role in accumulated_usage:
+                    for k in ("input_tokens", "output_tokens", "total_tokens"):
+                        accumulated_usage[role][k] = accumulated_usage[role].get(k, 0) + (counts.get(k, 0) or 0)
+                else:
+                    accumulated_usage[role] = {k: counts.get(k, 0) or 0
+                                               for k in ("input_tokens", "output_tokens", "total_tokens")}
 
             # Agent text response
             if node_name in AGENT_EVENT_FIELDS:
@@ -991,4 +1061,37 @@ def stream_debate_events(
                     "content": node_update.get("final_result", ""),
                 }
 
-    yield {"type": "run_finished"}
+    # Compute totals and cost estimate, then include in run_finished
+    total_input  = sum(u.get("input_tokens",  0) for u in accumulated_usage.values())
+    total_output = sum(u.get("output_tokens", 0) for u in accumulated_usage.values())
+    total_all    = sum(u.get("total_tokens",  0) for u in accumulated_usage.values())
+    token_totals: dict = {}
+    cost_estimate: dict | None = None
+    if accumulated_usage:
+        token_totals = {
+            "by_node": accumulated_usage,
+            "total": {
+                "input_tokens":  total_input,
+                "output_tokens": total_output,
+                "total_tokens":  total_all if total_all else (total_input + total_output),
+            },
+        }
+        # Build model mapping for cost estimation
+        models_by_role = {
+            "diagnostic_agent":         initial_state["diagnostic_model"],
+            "skeptic_agent":            initial_state["skeptic_model"],
+            "diagnostic_rebuttal_agent": initial_state["diagnostic_model"],
+            "moderator_agent":          initial_state["moderator_model"],
+            "summarize_history":        initial_state["summary_model"],
+        }
+        try:
+            settings = get_settings()
+            cost_estimate = estimate_cost(
+                accumulated_usage,
+                models_by_role,
+                prices_file=getattr(settings, "model_prices_file", None),
+            )
+        except Exception as exc:  # noqa: BLE001
+            _log.warning("Cost estimation failed (%s)", exc)
+
+    yield {"type": "run_finished", "token_totals": token_totals, "cost_estimate": cost_estimate}

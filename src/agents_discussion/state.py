@@ -54,6 +54,24 @@ def _append_list(current: list | None, new: list | None) -> list:
     return (current or []) + (new or [])
 
 
+def _merge_usage(
+    current: dict[str, dict[str, int]] | None,
+    new: dict[str, dict[str, int]] | None,
+) -> dict[str, dict[str, int]]:
+    """Reducer that merges token-usage dicts by summing counts per node."""
+    result: dict[str, dict[str, int]] = dict(current or {})
+    for key, val in (new or {}).items():
+        if key in result:
+            result[key] = {
+                "input_tokens":  (result[key].get("input_tokens",  0) or 0) + (val.get("input_tokens",  0) or 0),
+                "output_tokens": (result[key].get("output_tokens", 0) or 0) + (val.get("output_tokens", 0) or 0),
+                "total_tokens":  (result[key].get("total_tokens",  0) or 0) + (val.get("total_tokens",  0) or 0),
+            }
+        else:
+            result[key] = {k: v or 0 for k, v in val.items()}
+    return result
+
+
 class ModeratorDecision(BaseModel):
     status: Literal[
         "continue",
@@ -125,3 +143,5 @@ class DebateState(TypedDict):
     language: str
     # Compression enabled flag
     compress_history: bool
+    # Token usage accumulated across all LLM calls (agent_node → counts)
+    token_usage: Annotated[dict[str, dict[str, int]], _merge_usage]

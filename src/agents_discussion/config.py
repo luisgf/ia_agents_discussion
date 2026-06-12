@@ -88,6 +88,11 @@ class Settings(BaseSettings):
         alias="DATA_DIR",
     )
 
+    # Optional JSON file that maps model names to per-token prices (USD/1M).
+    # Schema: { "<model>": { "input": <price>, "output": <price> } }
+    # When absent, the built-in price table in pricing.py is used.
+    model_prices_file: Path | None = Field(None, alias="MODEL_PRICES_FILE")
+
     # ── Web server ───────────────────────────────────────────────────────
     web_host: str = Field("127.0.0.1", alias="WEB_HOST")
     web_port: int = Field(8000, alias="WEB_PORT", ge=1, le=65535)

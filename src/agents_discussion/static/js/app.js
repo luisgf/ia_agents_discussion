@@ -71,6 +71,41 @@ const btnExport   = document.getElementById('btn-export');
 const btnResume   = document.getElementById('btn-resume');
 const resumePanel = document.getElementById('resume-panel');
 
+// ── Mobile sidebar toggle ─────────────────────────────────────────────
+const sidebar = document.querySelector('.sidebar');
+const mobileMenuBtn = document.getElementById('mobile-menu-btn');
+const mobileOverlay = document.getElementById('mobile-overlay');
+
+function initMobileSidebar() {
+  if (!mobileMenuBtn || !sidebar || !mobileOverlay) return;
+
+  mobileMenuBtn.addEventListener('click', () => {
+    sidebar.classList.add('open');
+    mobileOverlay.classList.add('open');
+  });
+
+  mobileOverlay.addEventListener('click', () => {
+    sidebar.classList.remove('open');
+    mobileOverlay.classList.remove('open');
+  });
+
+  // Auto-cerrar al iniciar un debate
+  form.addEventListener('submit', () => {
+    sidebar.classList.remove('open');
+    mobileOverlay.classList.remove('open');
+  });
+
+  // Cerrar al hacer clic en un tab de la conversación
+  tabDebate.addEventListener('click', () => {
+    sidebar.classList.remove('open');
+    mobileOverlay.classList.remove('open');
+  });
+  tabHist.addEventListener('click', () => {
+    sidebar.classList.remove('open');
+    mobileOverlay.classList.remove('open');
+  });
+}
+
 // ── Helpers ────────────────────────────────────────────────────────────
 const esc = s => String(s || '')
   .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
@@ -510,6 +545,65 @@ function buildInfoCard(title, msg) {
   return el;
 }
 
+const ROLE_LABELS = {
+  diagnostic_agent:         'Diagnóstico',
+  skeptic_agent:            'Escéptico',
+  diagnostic_rebuttal_agent: 'Contrarréplica',
+  moderator_agent:          'Moderador',
+  summarize_history:        'Resumen',
+};
+
+function fmtTokens(n) {
+  if (n == null) return '—';
+  if (n >= 1_000_000) return (n / 1_000_000).toFixed(2) + 'M';
+  if (n >= 1000)      return (n / 1000).toFixed(1) + 'k';
+  return String(n);
+}
+
+function buildTokenStatsCard(tokenTotals, costEstimate) {
+  if (!tokenTotals || !tokenTotals.by_node) return null;
+  const byNode = tokenTotals.by_node;
+  const total  = tokenTotals.total || {};
+  const byNodeCost = (costEstimate || {}).by_node || {};
+  const totalUsd = (costEstimate || {}).total_usd;
+
+  const rows = Object.entries(byNode).map(([node, counts]) => {
+    const nodeCost = byNodeCost[node] ? byNodeCost[node].estimated_usd : null;
+    const costCell = nodeCost != null ? '$' + nodeCost.toFixed(4) : '—';
+    return '<tr>' +
+      '<td>' + esc(ROLE_LABELS[node] || node) + '</td>' +
+      '<td>' + esc(fmtTokens(counts.input_tokens))  + '</td>' +
+      '<td>' + esc(fmtTokens(counts.output_tokens)) + '</td>' +
+      '<td>' + esc(fmtTokens(counts.total_tokens))  + '</td>' +
+      '<td>' + esc(costCell) + '</td>' +
+      '</tr>';
+  }).join('');
+
+  const totalCostCell = totalUsd != null ? '$' + totalUsd.toFixed(4) : '—';
+
+  const el = document.createElement('div');
+  el.className = 'token-stats-card';
+  el.innerHTML =
+    '<div class="token-stats-head">&#128200; Consumo de tokens</div>' +
+    '<table class="token-stats-table">' +
+      '<thead><tr>' +
+        '<th>Agente</th><th>Entrada</th><th>Salida</th><th>Total</th><th>Coste est.</th>' +
+      '</tr></thead>' +
+      '<tbody>' + rows + '</tbody>' +
+      '<tfoot><tr class="token-stats-total">' +
+        '<td>TOTAL</td>' +
+        '<td>' + esc(fmtTokens(total.input_tokens))  + '</td>' +
+        '<td>' + esc(fmtTokens(total.output_tokens)) + '</td>' +
+        '<td>' + esc(fmtTokens(total.total_tokens))  + '</td>' +
+        '<td>' + esc(totalCostCell) + '</td>' +
+      '</tr></tfoot>' +
+    '</table>' +
+    ((costEstimate && !costEstimate.has_prices)
+      ? '<div class="token-stats-cost">Precio no disponible para uno o más modelos. Configura <code>MODEL_PRICES_FILE</code> para estimaciones precisas.</div>'
+      : '');
+  return el;
+}
+
 const TOOL_ICO = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg>';
 
 function buildToolCallCard(ev) {
@@ -918,6 +1012,8 @@ function renderEvent(ev) {
     if (lastDecision) push(buildFinalCard(lastDecision));
 
   } else if (ev.type === 'run_finished') {
+    const statsCard = buildTokenStatsCard(ev.token_totals, ev.cost_estimate);
+    if (statsCard) push(statsCard);
     if (isLive) {
       setStatus('done', 'Finalizado');
       finishLiveView();
@@ -1091,6 +1187,21 @@ function statusBadge(status) {
   return '<span class="rs ' + cls + '">' + esc(lbl) + '</span>';
 }
 
+function fmtRunDuration(secs) {
+  if (secs == null || secs < 0) return '—';
+  const s = Math.round(secs);
+  if (s < 60) return s + 's';
+  const m = Math.floor(s / 60), rs = s % 60;
+  if (m < 60) return m + 'm' + (rs > 0 ? ' ' + rs + 's' : '');
+  const h = Math.floor(m / 60), rm = m % 60;
+  return h + 'h' + (rm > 0 ? ' ' + rm + 'm' : '');
+}
+
+function fmtTs(iso) {
+  if (!iso) return '—';
+  return new Date(iso).toLocaleString('es', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+}
+
 function renderHistoryList(runs) {
   if (!runs.length) {
     histPanel.innerHTML = '<p class="hist-empty">No hay debates guardados todavía. Lanza un diagnóstico para verlo aquí.</p>';
@@ -1106,16 +1217,18 @@ function renderHistoryList(runs) {
   const table = document.createElement('table');
   table.className = 'hist-table';
   table.innerHTML = '<thead><tr>' +
-    '<th>Tema</th><th>Modelos</th><th>Fecha</th><th>Estado</th><th></th>' +
+    '<th>Tema</th><th>Modelos</th><th>Fecha inicio</th><th>Duración</th><th>Estado</th><th></th>' +
     '</tr></thead>';
   const tbody = document.createElement('tbody');
 
   for (const r of runs) {
-    const date = r.timestamp
-      ? new Date(r.timestamp).toLocaleString('es', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
-      : '—';
+    const date = fmtTs(r.timestamp);
+    const dur  = fmtRunDuration(r.duration_seconds);
+    const totalTok = r.token_totals && r.token_totals.total ? r.token_totals.total.total_tokens : null;
+    const durHtml = '<span class="hist-duration">' + esc(dur) + '</span>' +
+      (totalTok ? '<br><span class="hist-tokens">~' + esc(fmtTokens(totalTok)) + ' tok</span>' : '');
     const mods = r.models
-      ? [r.models.diagnostic, r.models.skeptic]
+      ? [r.models.diagnostic, r.models.skeptic, r.models.moderator]
           .filter(Boolean)
           .map(m => m.replace('copilot/', '').replace('openai/', ''))
           .join(', ')
@@ -1127,6 +1240,7 @@ function renderHistoryList(runs) {
       '<td><div class="hist-topic" title="' + esc(r.topic) + '">' + esc(r.topic || '—') + resumed + '</div></td>' +
       '<td><div class="hist-models" title="' + esc(mods) + '">' + esc(mods) + '</div></td>' +
       '<td><span class="hist-date">' + esc(date) + '</span></td>' +
+      '<td>' + durHtml + '</td>' +
       '<td>' + statusBadge(r.status) + '</td>' +
       '<td><div class="hist-actions">' +
         '<button class="btn-sm btn-open" data-act="open">' + (r.status === 'running' ? 'Ver en vivo' : 'Abrir') + '</button>' +
@@ -1177,6 +1291,17 @@ async function openRun(runId) {
   banner.className = 'replay-banner';
   banner.innerHTML = '&#9654; Reproduciendo debate &nbsp;&middot;&nbsp; <strong>' + esc(data.topic || '') + '</strong>';
   thread.insertBefore(banner, typing);
+
+  if (data.timestamp || data.finished_at || data.duration_seconds != null) {
+    const timingParts = [];
+    if (data.timestamp) timingParts.push('Inicio: <strong>' + esc(fmtTs(data.timestamp)) + '</strong>');
+    if (data.finished_at) timingParts.push('Fin: <strong>' + esc(fmtTs(data.finished_at)) + '</strong>');
+    if (data.duration_seconds != null) timingParts.push('Duración: <strong>' + esc(fmtRunDuration(data.duration_seconds)) + '</strong>');
+    const timingBar = document.createElement('div');
+    timingBar.className = 'run-timing-bar';
+    timingBar.innerHTML = timingParts.map(p => '<span>' + p + '</span>').join(' &middot; ');
+    thread.insertBefore(timingBar, typing);
+  }
 
   for (const ev of (data.events || [])) {
     renderEvent(ev);
@@ -1306,6 +1431,7 @@ async function loadTemplates() {
 loadModels();
 loadTemplates();
 initAuthButton();
+initMobileSidebar();
 
 // ── Auth modal & status ────────────────────────────────────────────────
 let _authPollInterval = null;
