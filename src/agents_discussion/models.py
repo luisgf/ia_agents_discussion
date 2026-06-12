@@ -29,6 +29,34 @@ def _normalize_effort(value: str | None) -> str | None:
     return v if v in _VALID_EFFORTS else None
 
 
+def _segments(model: str) -> list[str]:
+    """Split a model name into comparable segments (copilot/ prefix stripped)."""
+    return re.split(r"[/\-.]", model.removeprefix("copilot/").lower())
+
+
+def _is_openai_reasoning_family(model: str) -> bool:
+    """True for OpenAI o-series and gpt-5 families."""
+    segments = _segments(model)
+    if any(seg in _REASONING_MARKERS for seg in segments):
+        return True
+    name = model.removeprefix("copilot/").lower()
+    return any(seg.startswith("gpt-5") or seg == "gpt5" for seg in segments) or "gpt-5" in name
+
+
+def supports_temperature(model: str, effort: str | None = None) -> bool:
+    """True when the model accepts a custom `temperature`.
+
+    - OpenAI o-series / gpt-5 reject any non-default temperature outright.
+    - Claude requires the default temperature when extended thinking is on,
+      so it is dropped whenever a reasoning effort is actually sent.
+    """
+    if _is_openai_reasoning_family(model):
+        return False
+    if effort is not None and "claude" in _segments(model):
+        return False
+    return True
+
+
 def _claude_supports_reasoning(segments: list[str]) -> bool:
     """True for Claude variants that support extended thinking via reasoning_effort.
 
@@ -59,13 +87,10 @@ def supports_reasoning(model: str) -> bool:
     - OpenAI reasoning families (o1/o3/o4) and gpt-5: always accepted.
     - Claude: only sonnet/opus v4+ and 3.7-sonnet; haiku and 3.5/3.x excluded.
     """
-    name = model.removeprefix("copilot/").lower()
-    segments = re.split(r"[/\-.]", name)
+    segments = _segments(model)
     if "claude" in segments:
         return _claude_supports_reasoning(segments)
-    if any(seg in _REASONING_MARKERS for seg in segments):
-        return True
-    return any(seg.startswith("gpt-5") or seg == "gpt5" for seg in segments) or "gpt-5" in name
+    return _is_openai_reasoning_family(model)
 
 
 def _http_client() -> httpx.Client | None:
@@ -77,7 +102,7 @@ def _http_client() -> httpx.Client | None:
 
 # ── GitHub Models (ChatOpenAI → models.github.ai) ────────────────────────────
 
-def _create_github_models_model(model: str, temperature: float, reasoning_effort: str | None = None) -> ChatOpenAI:
+def _create_github_models_model(model: str, temperature: float | None, reasoning_effort: str | None = None) -> ChatOpenAI:
     settings = get_settings()
     if not settings.github_token:
         raise ValueError(
@@ -88,11 +113,12 @@ def _create_github_models_model(model: str, temperature: float, reasoning_effort
     kwargs: dict = {}
     if reasoning_effort:
         kwargs["reasoning_effort"] = reasoning_effort
+    if temperature is not None:
+        kwargs["temperature"] = temperature
     return ChatOpenAI(
         model=model,
         api_key=settings.github_token,
         base_url=settings.github_models_base_url,
-        temperature=temperature,
         http_client=_http_client(),
         **kwargs,
     )
@@ -117,7 +143,7 @@ _COPILOT_HEADERS: dict[str, str] = {
 }
 
 
-def _create_copilot_model(model: str, temperature: float, reasoning_effort: str | None = None) -> ChatOpenAI:
+def _create_copilot_model(model: str, temperature: float | None, reasoning_effort: str | None = None) -> ChatOpenAI:
     """Create a ChatOpenAI instance pointed at the Copilot inference endpoint.
 
     Authentication is a two-stage flow:
@@ -138,11 +164,12 @@ def _create_copilot_model(model: str, temperature: float, reasoning_effort: str 
     kwargs: dict = {}
     if reasoning_effort:
         kwargs["reasoning_effort"] = reasoning_effort
+    if temperature is not None:
+        kwargs["temperature"] = temperature
     return ChatOpenAI(
         model=model,
         api_key=session_token,
         base_url=_COPILOT_BASE_URL,
-        temperature=temperature,
         default_headers=_COPILOT_HEADERS,
         http_client=_http_client(),
         **kwargs,
@@ -165,13 +192,19 @@ def create_github_model(
     `reasoning_effort` (low|medium|high) is only forwarded when the value is
     valid AND the model belongs to a reasoning-capable family; otherwise it is
     silently dropped so non-reasoning models keep working unchanged.
+
+    `temperature` is dropped for models that reject it (OpenAI o-series/gpt-5,
+    and Claude when extended thinking is enabled) so the request doesn't 400.
     """
     effort = _normalize_effort(reasoning_effort)
     if effort is not None and not supports_reasoning(model):
         effort = None
+    resolved_temperature: float | None = temperature
+    if not supports_temperature(model, effort):
+        resolved_temperature = None
     if model.startswith("copilot/"):
-        return _create_copilot_model(model.removeprefix("copilot/"), temperature, effort)
-    return _create_github_models_model(model, temperature, effort)
+        return _create_copilot_model(model.removeprefix("copilot/"), resolved_temperature, effort)
+    return _create_github_models_model(model, resolved_temperature, effort)
 
 
 def create_diagnostic_model() -> BaseChatModel:

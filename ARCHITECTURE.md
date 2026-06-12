@@ -310,6 +310,7 @@ class DebateState(TypedDict):
 - **Temperature**: 0.0
 - **Role**: Reviews full round history and decides status + flow for next round
 - **Structured output**: Uses `model.with_structured_output(ModeratorDecision)` with JSON fallback
+- **Streaming**: Emits `agent_turn_started` at node start; the structured path cannot stream, but the JSON fallback path streams text/reasoning deltas via `_invoke_streaming`
 - **Output fields**: `moderator_decision` (includes embedded `flow_directive`)
 
 ---
@@ -451,6 +452,7 @@ The frontend groups consecutive tool calls into a collapsible **Tool Group** car
 | `tool_approval_request` | `RunControl` | Waiting for operator |
 | `tool_approval_resolved` | `RunControl` | Operator responded |
 | `moderator_decision` | `stream_debate_events` | Round decision |
+| `summary_started` | `summarize_history` | History compression begins (ephemeral) |
 | `history_compressed` | `stream_debate_events` | Summary generated |
 | `awaiting_user_input` | `RunControl` | HITL pause |
 | `user_comment` | `RunControl` | Operator comment inserted |

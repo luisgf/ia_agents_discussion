@@ -476,22 +476,26 @@ def diagnostic_agent(state: DebateState) -> dict[str, object]:
 
 
 def _should_skip(state: DebateState, agent_node: str) -> bool:
-    """Check if the moderator requested skipping this agent in the next round."""
-    # The flow directive from the PREVIOUS round's moderator decision controls THIS round
-    # We look at the most recent moderator decision in history
+    """Check if the moderator requested skipping this agent in the next round.
+
+    Only the MOST RECENT moderator decision controls the current round; older
+    directives must not leak into later rounds, so the scan stops (returning
+    True or False) at the first decision that parses.
+    """
     history = state.get("history", [])
     for msg in reversed(history):
-        if msg.role == "moderator":
-            try:
-                decision = json.loads(msg.content)
-                fd = decision.get("flow_directive")
-                if fd:
-                    if agent_node == "skeptic_agent" and fd.get("skip_skeptic"):
-                        return True
-                    if agent_node == "diagnostic_rebuttal_agent" and fd.get("skip_rebuttal"):
-                        return True
-            except (json.JSONDecodeError, AttributeError):
-                continue
+        if msg.role != "moderator":
+            continue
+        try:
+            decision = json.loads(msg.content)
+        except (json.JSONDecodeError, AttributeError):
+            continue
+        fd = decision.get("flow_directive") or {}
+        if agent_node == "skeptic_agent":
+            return bool(fd.get("skip_skeptic"))
+        if agent_node == "diagnostic_rebuttal_agent":
+            return bool(fd.get("skip_rebuttal"))
+        return False
     return False
 
 
@@ -603,6 +607,13 @@ def moderator_agent(state: DebateState) -> dict[str, object]:
     control = get_control(state.get("run_id", ""))
     if control is not None:
         control.raise_if_cancelled()
+        # Live activity card; the structured path can't stream, but the
+        # fallback path feeds it real deltas via _invoke_streaming.
+        control.emit({
+            "type": "agent_turn_started",
+            "agent_node": "moderator_agent",
+            "agent_role": "Moderador",
+        })
 
     template = _template_for(state)
     language = state.get("language", "es")
@@ -652,11 +663,15 @@ def moderator_agent(state: DebateState) -> dict[str, object]:
         decision = None
 
     if decision is None:
-        response = model.invoke(
+        response = _invoke_streaming(
+            model,
             [
                 SystemMessage(content=template.moderator_system),
                 HumanMessage(content=prompt + moderator_json_fallback_suffix(language)),
-            ]
+            ],
+            control,
+            "moderator_agent",
+            "Moderador",
         )
         decision = _parse_moderator_response(_message_content(response))
 
@@ -691,6 +706,10 @@ def summarize_history(state: DebateState) -> dict[str, object]:
         "Mensajes a resumir:\n"
         + "\n\n".join(f"[{m.role}]\n{m.content[:2000]}" for m in last_msgs)
     )
+
+    control = get_control(state.get("run_id", ""))
+    if control is not None:
+        control.emit({"type": "summary_started", "round": current_round})
 
     summary_model_name = state.get("summary_model", state["moderator_model"])
     summary_text = ""

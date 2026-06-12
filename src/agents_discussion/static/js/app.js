@@ -13,6 +13,7 @@ const AGENT_CFG = {
   diagnostic_agent:           { cls: 'a-diag',     ico: ICO.diag },
   skeptic_agent:              { cls: 'a-skeptic',   ico: ICO.skeptic },
   diagnostic_rebuttal_agent:  { cls: 'a-rebuttal',  ico: ICO.rebuttal },
+  moderator_agent:            { cls: 'a-mod',       ico: ICO.mod },
 };
 
 const NEXT_LABEL = {
@@ -93,8 +94,8 @@ function setStatus(state, text) {
   pillTxt.textContent = text;
 }
 
-function showTyping(label) {
-  typingLbl.textContent = label + ' analizando...';
+function showTyping(label, suffix = ' analizando...') {
+  typingLbl.textContent = label + suffix;
   typing.classList.remove('hidden');
   scrollBottom();
 }
@@ -824,6 +825,11 @@ function renderEvent(ev) {
     return;
   }
 
+  if (ev.type === 'summary_started') {
+    if (isLive) showTyping('Comprimiendo historial', '...');
+    return;
+  }
+
   if (ev.type === 'tool_call_started') {
     const group = ensureToolGroup(ev);
     const card = buildRunningToolCard(ev);
@@ -963,6 +969,11 @@ function renderEvent(ev) {
     if (next && isLive) showTyping(next);
 
   } else if (ev.type === 'moderator_decision') {
+    // Discard the moderator's live card (raw JSON from the fallback path is
+    // not useful); if it streamed thinking, the collapsed block survives.
+    if (liveAgent && liveAgent.node === 'moderator_agent') {
+      finalizeLiveAgent('', 'final', 'Ronda ' + curRound + ' · Razonamiento');
+    }
     const d = ev.decision || {};
     push(buildModCard(d, curRound));
 
