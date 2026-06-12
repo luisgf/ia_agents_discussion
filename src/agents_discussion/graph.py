@@ -84,40 +84,6 @@ def _chunk_text(content: object) -> str:
     return ""
 
 
-_REASONING_PART_TYPES = ("thinking", "reasoning", "reasoning_content")
-
-
-def _chunk_reasoning_text(chunk: object) -> str:
-    """Extract reasoning/thinking deltas from a streamed chunk.
-
-    Providers expose reasoning in different places over OpenAI-compatible
-    endpoints, so every known location is checked:
-      - additional_kwargs["reasoning_content"]  (DeepSeek-R1 / Copilot style)
-      - additional_kwargs["reasoning"]          (str, or dict with text/content)
-      - content parts with type thinking/reasoning  (Anthropic style)
-    OpenAI o-series over Chat Completions never returns its chain of thought,
-    so for those models this always yields "".
-    """
-    parts: list[str] = []
-    extra = getattr(chunk, "additional_kwargs", None) or {}
-    for key in ("reasoning_content", "reasoning"):
-        value = extra.get(key)
-        if isinstance(value, str):
-            parts.append(value)
-        elif isinstance(value, dict):
-            text = value.get("text") or value.get("content")
-            if isinstance(text, str):
-                parts.append(text)
-    content = getattr(chunk, "content", None)
-    if isinstance(content, list):
-        for part in content:
-            if isinstance(part, dict) and part.get("type") in _REASONING_PART_TYPES:
-                text = part.get("thinking") or part.get("reasoning") or part.get("text") or ""
-                if isinstance(text, str):
-                    parts.append(text)
-    return "".join(parts)
-
-
 def _invoke_streaming(model, messages: list, control, agent_node: str, agent_role: str):
     """Invoke model with streaming to UI. Falls back to blocking invoke."""
     if control is None:
@@ -129,20 +95,10 @@ def _invoke_streaming(model, messages: list, control, agent_node: str, agent_rol
         "agent_role": agent_role,
     })
     response = None
-    reasoning_parts: list[str] = []
     try:
         for chunk in model.stream(messages):
             control.raise_if_cancelled()
             response = chunk if response is None else response + chunk
-            thinking = _chunk_reasoning_text(chunk)
-            if thinking:
-                reasoning_parts.append(thinking)
-                control.emit({
-                    "type": "agent_reasoning_delta",
-                    "agent_node": agent_node,
-                    "agent_role": agent_role,
-                    "delta": thinking,
-                })
             delta = _chunk_text(chunk.content)
             if delta:
                 control.emit({
@@ -153,22 +109,10 @@ def _invoke_streaming(model, messages: list, control, agent_node: str, agent_rol
                 })
     except RunCancelled:
         raise
-    except Exception as exc:
+    except Exception:
         if response is not None:
             raise
-        _log.warning(
-            "streaming failed for %s (%s), falling back to blocking invoke "
-            "— no live deltas for this turn", agent_node, exc,
-        )
         return model.invoke(messages)
-    if reasoning_parts:
-        # Persisted (non-ephemeral) so stored runs can replay the reasoning.
-        control.emit({
-            "type": "agent_thinking",
-            "agent_node": agent_node,
-            "agent_role": agent_role,
-            "content": "".join(reasoning_parts),
-        })
     if response is None:
         return model.invoke(messages)
     return response
@@ -476,26 +420,22 @@ def diagnostic_agent(state: DebateState) -> dict[str, object]:
 
 
 def _should_skip(state: DebateState, agent_node: str) -> bool:
-    """Check if the moderator requested skipping this agent in the next round.
-
-    Only the MOST RECENT moderator decision controls the current round; older
-    directives must not leak into later rounds, so the scan stops (returning
-    True or False) at the first decision that parses.
-    """
+    """Check if the moderator requested skipping this agent in the next round."""
+    # The flow directive from the PREVIOUS round's moderator decision controls THIS round
+    # We look at the most recent moderator decision in history
     history = state.get("history", [])
     for msg in reversed(history):
-        if msg.role != "moderator":
-            continue
-        try:
-            decision = json.loads(msg.content)
-        except (json.JSONDecodeError, AttributeError):
-            continue
-        fd = decision.get("flow_directive") or {}
-        if agent_node == "skeptic_agent":
-            return bool(fd.get("skip_skeptic"))
-        if agent_node == "diagnostic_rebuttal_agent":
-            return bool(fd.get("skip_rebuttal"))
-        return False
+        if msg.role == "moderator":
+            try:
+                decision = json.loads(msg.content)
+                fd = decision.get("flow_directive")
+                if fd:
+                    if agent_node == "skeptic_agent" and fd.get("skip_skeptic"):
+                        return True
+                    if agent_node == "diagnostic_rebuttal_agent" and fd.get("skip_rebuttal"):
+                        return True
+            except (json.JSONDecodeError, AttributeError):
+                continue
     return False
 
 
@@ -574,6 +514,7 @@ def diagnostic_rebuttal_agent(state: DebateState) -> dict[str, object]:
         rebuttal_prompt(
             state["topic"], state["context"], state["diagnostic_response"],
             state["skeptic_response"], state.get("hypotheses", []),
+            history=state["history"],
             language=state.get("language", "es"),
             history_summary=history_summary,
             mode=mode,
@@ -607,13 +548,6 @@ def moderator_agent(state: DebateState) -> dict[str, object]:
     control = get_control(state.get("run_id", ""))
     if control is not None:
         control.raise_if_cancelled()
-        # Live activity card; the structured path can't stream, but the
-        # fallback path feeds it real deltas via _invoke_streaming.
-        control.emit({
-            "type": "agent_turn_started",
-            "agent_node": "moderator_agent",
-            "agent_role": "Moderador",
-        })
 
     template = _template_for(state)
     language = state.get("language", "es")
@@ -663,15 +597,11 @@ def moderator_agent(state: DebateState) -> dict[str, object]:
         decision = None
 
     if decision is None:
-        response = _invoke_streaming(
-            model,
+        response = model.invoke(
             [
                 SystemMessage(content=template.moderator_system),
                 HumanMessage(content=prompt + moderator_json_fallback_suffix(language)),
-            ],
-            control,
-            "moderator_agent",
-            "Moderador",
+            ]
         )
         decision = _parse_moderator_response(_message_content(response))
 
@@ -706,10 +636,6 @@ def summarize_history(state: DebateState) -> dict[str, object]:
         "Mensajes a resumir:\n"
         + "\n\n".join(f"[{m.role}]\n{m.content[:2000]}" for m in last_msgs)
     )
-
-    control = get_control(state.get("run_id", ""))
-    if control is not None:
-        control.emit({"type": "summary_started", "round": current_round})
 
     summary_model_name = state.get("summary_model", state["moderator_model"])
     summary_text = ""

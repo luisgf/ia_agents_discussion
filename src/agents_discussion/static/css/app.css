@@ -813,3 +813,45 @@ details.adv > summary::-webkit-details-marker { display: none; }
   .sidebar { height: auto; max-height: 55vh; }
   .convo { height: 60vh; }
 }
+
+/* ── Auth modal ───────────────────────────────────────────── */
+.modal-overlay {
+  position: fixed; inset: 0; background: rgba(0,0,0,0.5);
+  display: flex; align-items: center; justify-content: center; z-index: 1000;
+}
+.modal-card {
+  background: var(--bg); border: 1px solid var(--border);
+  padding: 24px; width: 420px; max-width: 90vw;
+  box-shadow: 0 16px 48px rgba(0,0,0,0.2);
+}
+.modal-head {
+  display: flex; justify-content: space-between; align-items: center;
+  margin-bottom: 16px; border-bottom: 1px solid var(--border); padding-bottom: 12px;
+}
+.modal-head h3 { font-size: 13px; font-weight: 600; text-transform: uppercase; letter-spacing: .1em; }
+.modal-close { background: none; border: none; font-size: 20px; cursor: pointer; color: var(--dim); line-height: 1; }
+.modal-close:hover { color: var(--text); }
+.modal-body { font-size: 13px; line-height: 1.7; }
+.modal-foot { margin-top: 20px; display: flex; gap: 8px; justify-content: flex-end; }
+
+.auth-status-btn {
+  background: var(--s2); border: 1px solid var(--border);
+  padding: 4px 10px; font-size: 11px; cursor: pointer;
+  text-transform: uppercase; letter-spacing: .06em;
+  margin-top: 10px; transition: background .15s;
+}
+.auth-status-btn:hover { background: var(--s3); }
+
+.auth-ok   { color: var(--final); }
+.auth-warn { color: var(--rebuttal); }
+.auth-err  { color: var(--err); }
+
+#auth-user-code {
+  font-family: monospace; font-size: 18px; letter-spacing: 3px;
+  background: var(--s2); padding: 4px 10px; border: 1px solid var(--border);
+  display: inline-block; margin-top: 4px;
+}
+
+#auth-flow-ui p { margin-bottom: 8px; }
+#auth-flow-ui a { color: var(--diag); text-decoration: underline; }
+#auth-polling-status { font-size: 12px; margin-top: 6px; }

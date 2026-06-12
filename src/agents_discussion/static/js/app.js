@@ -13,7 +13,6 @@ const AGENT_CFG = {
   diagnostic_agent:           { cls: 'a-diag',     ico: ICO.diag },
   skeptic_agent:              { cls: 'a-skeptic',   ico: ICO.skeptic },
   diagnostic_rebuttal_agent:  { cls: 'a-rebuttal',  ico: ICO.rebuttal },
-  moderator_agent:            { cls: 'a-mod',       ico: ICO.mod },
 };
 
 const NEXT_LABEL = {
@@ -94,8 +93,8 @@ function setStatus(state, text) {
   pillTxt.textContent = text;
 }
 
-function showTyping(label, suffix = ' analizando...') {
-  typingLbl.textContent = label + suffix;
+function showTyping(label) {
+  typingLbl.textContent = label + ' analizando...';
   typing.classList.remove('hidden');
   scrollBottom();
 }
@@ -237,29 +236,6 @@ function buildAgentCard(event) {
   return el;
 }
 
-// Static card with the model's chain of thought, used when replaying a
-// stored run (live runs render it inside the streaming card instead).
-function buildThinkingCard(event) {
-  const cfg = AGENT_CFG[event.agent_node] || { cls: 'a-diag', ico: ICO.diag };
-  const el = document.createElement('article');
-  el.className = 'acard acard--reasoning ' + cfg.cls;
-  el.innerHTML =
-    '<div class="acard-head">' +
-      '<div class="agent-id">' +
-        '<div class="agent-ico">' + cfg.ico + '</div>' +
-        '<div><span class="agent-nm">' + esc(event.agent_role) + '</span>' +
-             '<span class="agent-sub agent-sub--reasoning">Razonamiento del modelo</span></div>' +
-      '</div>' +
-      CHEVRON +
-    '</div>' +
-    '<div class="card-body">' +
-      '<details class="think-box"><summary>Razonamiento del modelo</summary>' +
-      '<div class="think-body">' + md(event.content) + '</div></details>' +
-    '</div>';
-  el.querySelector('.acard-head').addEventListener('click', () => el.classList.toggle('collapsed'));
-  return el;
-}
-
 function buildReasoningCard(event) {
   const cfg = AGENT_CFG[event.agent_node] || { cls: 'a-diag', ico: ICO.diag };
   const el = document.createElement('article');
@@ -281,35 +257,21 @@ function buildReasoningCard(event) {
 // ── Live streaming agent card ──────────────────────────────────────────
 // Created on agent_turn_started, fed token deltas by agent_delta, and frozen
 // in place by the turn's closing event (agent_reasoning / agent_completed).
-// Collapsible block holding the model's chain of thought (thinking tokens).
-// `open` while streaming so the operator sees it live; collapsed once frozen.
-function thinkHTML(live, open) {
-  if (!live.thinkBuffer.trim()) return '';
-  return '<details class="think-box"' + (open ? ' open' : '') + '>' +
-    '<summary>Razonamiento del modelo</summary>' +
-    '<div class="think-body">' + md(live.thinkBuffer) + '</div></details>';
-}
-
 function ensureLiveAgent(node, role) {
   // Reutilizar tarjeta del mismo nodo (reactivar si está congelada por reasoning)
   if (liveAgent && liveAgent.node === node) {
     if (!liveAgent.el.classList.contains('acard--streaming')) {
+      // Reactivating from a frozen (reasoning) state: start a fresh streaming
+      // iteration. Reset the buffer so we accumulate only the new LLM response.
       liveAgent.el.classList.add('acard--streaming');
       liveAgent.el.classList.remove('acard--reasoning');
       const sub = liveAgent.el.querySelector('.agent-sub');
       sub.classList.remove('agent-sub--reasoning');
       sub.classList.add('agent-sub--live');
       sub.textContent = 'Razonando en tiempo real…';
-    } else if (liveAgent.thinkBuffer.trim()) {
-      // Mid-stream restart (tool call without visible text): keep the
-      // thinking already shown by folding it into the frozen HTML.
-      liveAgent.frozenHTML += thinkHTML(liveAgent, false);
-      liveAgent.body.innerHTML = liveAgent.frozenHTML;
+      liveAgent.buffer = '';
+      if (liveAgent.timer) { clearTimeout(liveAgent.timer); liveAgent.timer = null; }
     }
-    // Reset buffers for a new LLM streaming iteration (same agent, new round of ReAct)
-    liveAgent.buffer = '';
-    liveAgent.thinkBuffer = '';
-    if (liveAgent.timer) { clearTimeout(liveAgent.timer); liveAgent.timer = null; }
     return liveAgent;
   }
   if (liveAgent) finalizeLiveAgent();
@@ -327,33 +289,24 @@ function ensureLiveAgent(node, role) {
     '</div>' +
     '<div class="card-body"></div>';
   el.querySelector('.acard-head').addEventListener('click', () => el.classList.toggle('collapsed'));
-  liveAgent = { el, body: el.querySelector('.card-body'), buffer: '', thinkBuffer: '', node, role, timer: null, frozenHTML: '' };
+  liveAgent = { el, body: el.querySelector('.card-body'), buffer: '', node, role, timer: null, frozenHTML: '' };
   hideTyping();
   push(el);
   return liveAgent;
 }
 
-// Throttle markdown re-rendering: deltas arrive far faster than 8 fps.
-function renderLive(live) {
-  if (live.timer) return;
-  live.timer = setTimeout(() => {
-    live.timer = null;
-    // Preserve frozen content (e.g., prior reasoning) while appending fresh deltas
-    live.body.innerHTML = live.frozenHTML + thinkHTML(live, true) + md(live.buffer);
-    scrollBottom();
-  }, 120);
-}
-
 function appendLiveDelta(ev) {
   const live = ensureLiveAgent(ev.agent_node, ev.agent_role);
   live.buffer += ev.delta || '';
-  renderLive(live);
-}
-
-function appendLiveThinking(ev) {
-  const live = ensureLiveAgent(ev.agent_node, ev.agent_role);
-  live.thinkBuffer += ev.delta || '';
-  renderLive(live);
+  // Throttle markdown re-rendering: deltas arrive far faster than 8 fps.
+  if (!live.timer) {
+    live.timer = setTimeout(() => {
+      live.timer = null;
+      // Preserve frozen content (e.g., prior reasoning) while appending fresh deltas
+      live.body.innerHTML = live.frozenHTML + md(live.buffer);
+      scrollBottom();
+    }, 120);
+  }
 }
 
 // Freeze the streaming card with its definitive content.
@@ -372,21 +325,14 @@ function finalizeLiveAgent(content, kind, subtitle) {
   }
   if (live.timer) clearTimeout(live.timer);
   const text = content != null ? content : live.buffer;
-  if (!String(text).trim() && !live.thinkBuffer.trim() && !live.frozenHTML) {
-    live.el.remove();
-    return true;
-  }
+  if (!String(text).trim()) { live.el.remove(); return true; }
   live.el.classList.remove('acard--streaming');
+  if (kind === 'reasoning') live.el.classList.add('acard--reasoning');
+  live.body.innerHTML = md(text);
   if (kind === 'reasoning') {
-    live.el.classList.add('acard--reasoning');
-    // Accumulate so subsequent ReAct iterations append instead of overwriting
-    live.body.innerHTML = live.frozenHTML + thinkHTML(live, false) + md(text);
+    // Snapshot AFTER rendering so subsequent iterations append the definitive
+    // rendered HTML, not stale partial streaming content.
     live.frozenHTML = live.body.innerHTML;
-    live.buffer = '';
-    live.thinkBuffer = '';
-  } else {
-    // Definitive freeze: show the final answer (plus its thinking, collapsed)
-    live.body.innerHTML = thinkHTML(live, false) + md(text);
   }
   const sub = live.el.querySelector('.agent-sub');
   sub.classList.remove('agent-sub--live');
@@ -813,23 +759,6 @@ function renderEvent(ev) {
     return;
   }
 
-  if (ev.type === 'agent_reasoning_delta') {
-    appendLiveThinking(ev);
-    return;
-  }
-
-  if (ev.type === 'agent_thinking') {
-    // Live run: the streaming card already shows it via deltas.
-    // Stored replay (no live card): build a static collapsed card.
-    if (!(liveAgent && liveAgent.node === ev.agent_node)) push(buildThinkingCard(ev));
-    return;
-  }
-
-  if (ev.type === 'summary_started') {
-    if (isLive) showTyping('Comprimiendo historial', '...');
-    return;
-  }
-
   if (ev.type === 'tool_call_started') {
     const group = ensureToolGroup(ev);
     const card = buildRunningToolCard(ev);
@@ -860,6 +789,15 @@ function renderEvent(ev) {
     if (ev.error) group.errors += 1;
     updateToolGroup(group, ev);
     scrollBottom();
+    return;
+  }
+
+  // agent_reasoning is emitted between ReAct iterations (after tool calls finish
+  // and before a new LLM call). It must NOT close the active tool group, because
+  // the same agent may do more tool calls right after — closing would create a
+  // second group card.
+  if (ev.type === 'agent_reasoning') {
+    if (!finalizeLiveAgent(ev.content, 'reasoning')) push(buildReasoningCard(ev));
     return;
   }
 
@@ -958,22 +896,12 @@ function renderEvent(ev) {
     addRoundSep(1, maxRounds);
     if (isLive) showTyping('Diagnóstico Principal');
 
-  } else if (ev.type === 'agent_reasoning') {
-    // Live run: the streaming card already holds this text — freeze it.
-    // Stored replay (no live card): build the static reasoning card.
-    if (!finalizeLiveAgent(ev.content, 'reasoning')) push(buildReasoningCard(ev));
-
   } else if (ev.type === 'agent_completed') {
     if (!finalizeLiveAgent(ev.content, 'final', 'Ronda ' + curRound)) push(buildAgentCard(ev));
     const next = NEXT_LABEL[ev.node];
     if (next && isLive) showTyping(next);
 
   } else if (ev.type === 'moderator_decision') {
-    // Discard the moderator's live card (raw JSON from the fallback path is
-    // not useful); if it streamed thinking, the collapsed block survives.
-    if (liveAgent && liveAgent.node === 'moderator_agent') {
-      finalizeLiveAgent('', 'final', 'Ronda ' + curRound + ' · Razonamiento');
-    }
     const d = ev.decision || {};
     push(buildModCard(d, curRound));
 
@@ -1064,7 +992,17 @@ form.addEventListener('submit', async ev => {
 
     const res     = await fetch('/api/runs', { method: 'POST', body: fd });
     const payload = await res.json();
-    if (!res.ok) throw new Error(payload.detail || 'No se pudo iniciar el diagnóstico');
+    if (!res.ok) {
+      const msg = payload.detail || payload.message || 'No se pudo iniciar el diagnóstico';
+      // Detect auth-related errors and prompt user to renew token
+      if (/token.*expired|unauthorized|invalid.*token|401|403/i.test(msg)) {
+        throw new Error(
+          'Token de GitHub expirado o no válido. ' +
+          'Pulsa el botón 🔑 Auth en la barra lateral para renovarlo.'
+        );
+      }
+      throw new Error(msg);
+    }
 
     watchRun(payload.run_id);
   } catch (err) {
@@ -1367,3 +1305,169 @@ async function loadTemplates() {
 // ── Init ───────────────────────────────────────────────────────────────
 loadModels();
 loadTemplates();
+initAuthButton();
+
+// ── Auth modal & status ────────────────────────────────────────────────
+let _authPollInterval = null;
+
+function initAuthButton() {
+  const head = document.querySelector('.sidebar-head');
+  if (!head || document.getElementById('auth-status-btn')) return;
+  const btn = document.createElement('button');
+  btn.id = 'auth-status-btn';
+  btn.className = 'auth-status-btn';
+  btn.innerHTML = '&#128273; Auth';
+  btn.addEventListener('click', showAuthModal);
+  head.appendChild(btn);
+}
+
+function showAuthModal() {
+  if (document.getElementById('auth-modal')) return;
+  const modal = document.createElement('div');
+  modal.className = 'modal-overlay';
+  modal.id = 'auth-modal';
+  modal.innerHTML =
+    '<div class="modal-card">' +
+      '<div class="modal-head">' +
+        '<h3>Autenticación GitHub Copilot</h3>' +
+        '<button class="modal-close" id="auth-modal-close">&times;</button>' +
+      '</div>' +
+      '<div class="modal-body">' +
+        '<div id="auth-current-status"></div>' +
+        '<div id="auth-flow-ui" style="display:none;margin-top:1rem;">' +
+          '<p>1. Abre <a id="auth-verification-url" href="#" target="_blank">github.com/login/device</a></p>' +
+          '<p>2. Introduce el código:<br><strong id="auth-user-code"></strong></p>' +
+          '<p id="auth-polling-status" style="color:#888;margin-top:0.5rem;">Esperando autorización...</p>' +
+        '</div>' +
+      '</div>' +
+      '<div class="modal-foot">' +
+        '<button id="auth-start-btn" class="btn btn-primary">Conectar Copilot</button>' +
+        '<button id="auth-modal-cancel" class="btn btn-secondary">Cerrar</button>' +
+      '</div>' +
+    '</div>';
+  document.body.appendChild(modal);
+
+  document.getElementById('auth-modal-close').addEventListener('click', closeAuthModal);
+  document.getElementById('auth-modal-cancel').addEventListener('click', closeAuthModal);
+  document.getElementById('auth-start-btn').addEventListener('click', startCopilotAuth);
+
+  loadAuthStatus();
+}
+
+function closeAuthModal() {
+  if (_authPollInterval) { clearInterval(_authPollInterval); _authPollInterval = null; }
+  const m = document.getElementById('auth-modal');
+  if (m) m.remove();
+}
+
+async function loadAuthStatus() {
+  const div = document.getElementById('auth-current-status');
+  if (!div) return;
+  try {
+    const resp = await fetch('/api/auth/status');
+    const s = await resp.json();
+    let html = '';
+    if (s.copilot_configured) {
+      const mins = s.copilot_session_expires_in_seconds != null
+        ? Math.floor(s.copilot_session_expires_in_seconds / 60)
+        : '?';
+      const cls = s.copilot_session_valid && mins > 5 ? 'auth-ok' : (mins > 0 ? 'auth-warn' : 'auth-err');
+      html += '<div class="' + cls + '">&#9679; Copilot: ' + (s.copilot_session_valid ? 'OK' : 'Expirado') +
+              ' (~' + mins + ' min)</div>';
+    } else {
+      html += '<div class="auth-err">&#9679; Copilot: No configurado</div>';
+    }
+    if (s.github_models_configured) {
+      html += '<div class="auth-ok">&#9679; GitHub Models: OK</div>';
+    }
+    if (s.last_error) {
+      html += '<div class="auth-err">Error: ' + esc(s.last_error) + '</div>';
+    }
+    div.innerHTML = html;
+  } catch (e) {
+    div.innerHTML = '<div class="auth-err">No se pudo obtener estado de auth</div>';
+  }
+}
+
+async function startCopilotAuth() {
+  const btn = document.getElementById('auth-start-btn');
+  const flowUI = document.getElementById('auth-flow-ui');
+  const status = document.getElementById('auth-polling-status');
+  btn.disabled = true;
+  btn.textContent = 'Iniciando...'
+
+  try {
+    const resp = await fetch('/api/auth/copilot', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+      body: 'action=start',
+    });
+    const data = await resp.json();
+
+    if (data.status !== 'pending') {
+      status.textContent = 'Error: ' + (data.error || 'desconocido');
+      status.className = 'auth-err';
+      btn.disabled = false;
+      btn.textContent = 'Reintentar';
+      return;
+    }
+
+    document.getElementById('auth-verification-url').href = data.verification_uri;
+    document.getElementById('auth-user-code').textContent = data.user_code;
+    flowUI.style.display = 'block';
+
+    const deviceCode = data.device_code;
+    const intervalMs = (data.interval || 5) * 1000;
+
+    _authPollInterval = setInterval(async () => {
+      try {
+        const check = await fetch('/api/auth/copilot', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+          body: 'action=check&device_code=' + encodeURIComponent(deviceCode),
+        });
+        const result = await check.json();
+
+        if (result.status === 'authorized') {
+          clearInterval(_authPollInterval);
+          _authPollInterval = null;
+          status.textContent = '\u2713 Autorizado. Recargando modelos...';
+          status.className = 'auth-ok';
+          await fetch('/api/models/refresh', {method: 'POST'});
+          await loadModels();
+          await loadAuthStatus();
+          setTimeout(closeAuthModal, 1500);
+        } else if (result.status === 'denied') {
+          clearInterval(_authPollInterval);
+          _authPollInterval = null;
+          status.textContent = '\u2717 Denegado.';
+          status.className = 'auth-err';
+          btn.disabled = false;
+          btn.textContent = 'Reintentar';
+        } else if (result.status === 'expired') {
+          clearInterval(_authPollInterval);
+          _authPollInterval = null;
+          status.textContent = '\u2717 Código expirado.';
+          status.className = 'auth-err';
+          btn.disabled = false;
+          btn.textContent = 'Reintentar';
+        } else if (result.status === 'error') {
+          clearInterval(_authPollInterval);
+          _authPollInterval = null;
+          status.textContent = '\u2717 ' + (result.error || 'Error');
+          status.className = 'auth-err';
+          btn.disabled = false;
+          btn.textContent = 'Reintentar';
+        }
+      } catch (e) {
+        status.textContent = 'Esperando...';
+      }
+    }, intervalMs);
+
+  } catch (e) {
+    status.textContent = 'Error de red: ' + e.message;
+    status.className = 'auth-err';
+    btn.disabled = false;
+    btn.textContent = 'Reintentar';
+  }
+}

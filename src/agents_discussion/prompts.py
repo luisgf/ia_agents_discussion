@@ -257,6 +257,7 @@ def rebuttal_prompt(
     diagnostic_response: str,
     skeptic_response: str,
     hypotheses: list[object],
+    history: list[object] | None = None,
     language: str = "es",
     history_summary: str = "",
     mode: str = "full",
@@ -279,7 +280,7 @@ def rebuttal_prompt(
 {_format_hypotheses(hypotheses, language)}
 
 {t["history"]}
-{format_history(history, language, history_summary, mode=mode)}
+{format_history(history or [], language, history_summary, mode=mode)}
 
 {t["rebuttal_deliver"]}
 """.strip()
