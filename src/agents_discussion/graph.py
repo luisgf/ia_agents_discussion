@@ -529,19 +529,46 @@ def diagnostic_rebuttal_agent(state: DebateState) -> dict[str, object]:
 
 
 def _parse_moderator_response(text: str) -> ModeratorDecision:
-    """Extract JSON from the model response and parse into ModeratorDecision."""
-    match = re.search(r"```(?:json)?\s*(\{.*?\})\s*```", text, re.DOTALL)
-    if match:
-        json_str = match.group(1)
-    else:
-        start = text.find("{")
-        end = text.rfind("}")
-        if start == -1 or end == -1:
-            raise ValueError(f"No JSON object found in moderator response: {text[:200]}")
-        json_str = text[start : end + 1]
+    """Extract JSON from the model response and parse into ModeratorDecision.
 
-    data = json.loads(json_str)
-    return ModeratorDecision.model_validate(data)
+    Handles fenced JSON, Markdown-wrapped JSON (headers before/after),
+    and naked JSON objects.
+    """
+    cleaned = text.strip()
+
+    # Strategy 1: Look for ```json or ``` fences
+    for pattern in [r"```json\s*(\{.*\})\s*```", r"```\s*(\{.*\})\s*```"]:
+        match = re.search(pattern, cleaned, re.DOTALL)
+        if match:
+            try:
+                return ModeratorDecision.model_validate_json(match.group(1))
+            except Exception:
+                pass  # Try next strategy
+
+    # Strategy 2: Find outermost JSON object via brace counting
+    # This handles cases like "## Header\n{...}\nmore text"
+    start = -1
+    depth = 0
+    for i, ch in enumerate(cleaned):
+        if ch == "{":
+            if depth == 0:
+                start = i
+            depth += 1
+        elif ch == "}":
+            depth -= 1
+            if depth == 0 and start != -1:
+                candidate = cleaned[start:i + 1]
+                try:
+                    return ModeratorDecision.model_validate_json(candidate)
+                except Exception:
+                    start = -1  # Continue searching
+
+    # Strategy 3: First { to last } (last resort, may be wrong)
+    start = cleaned.find("{")
+    end = cleaned.rfind("}")
+    if start == -1 or end == -1 or end <= start:
+        raise ValueError(f"No JSON object found in moderator response: {text[:200]}")
+    return ModeratorDecision.model_validate_json(cleaned[start:end + 1])
 
 
 def moderator_agent(state: DebateState) -> dict[str, object]:

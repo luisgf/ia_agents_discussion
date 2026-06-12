@@ -331,11 +331,16 @@ def moderator_prompt(
 {diagnostic_rebuttal}
 
 {t["mod_decide"]}
+
+{t["json_only"]}
+
+{MODERATOR_JSON_SCHEMA}
 """.strip()
 
 
 def moderator_json_fallback_suffix(language: str = "es") -> str:
-    """Appended to the moderator prompt only on the plain-text fallback path,
-    when the model/endpoint does not support structured output."""
+    """Appended to the moderator prompt only when the model/endpoint
+    does not support structured output natively. Since the base prompt
+    already includes the JSON schema, this suffix is now a thin reminder."""
     t = _labels(language)
-    return f"\n\n{t['json_only']}\n\n{MODERATOR_JSON_SCHEMA}"
+    return f"\n\n{t['json_only']}"
