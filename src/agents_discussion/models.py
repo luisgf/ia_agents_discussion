@@ -93,6 +93,18 @@ def supports_reasoning(model: str) -> bool:
     return _is_openai_reasoning_family(model)
 
 
+def requires_responses_api(model: str) -> bool:
+    """True for models only reachable through the OpenAI Responses API (/responses).
+
+    GitHub Copilot exposes gpt-5.5 (and its variants, e.g. gpt-5.5-codex)
+    exclusively on /responses; hitting /chat/completions returns
+    HTTP 400 `unsupported_api_for_model`. langchain-openai switches to that
+    endpoint when `use_responses_api=True`.
+    """
+    name = model.removeprefix("copilot/").lower()
+    return "gpt-5.5" in name or "gpt-5-5" in name
+
+
 def _http_client() -> httpx.Client | None:
     ca_bundle = os.environ.get("REQUESTS_CA_BUNDLE") or os.environ.get("SSL_CERT_FILE")
     if ca_bundle:
@@ -115,6 +127,8 @@ def _create_github_models_model(model: str, temperature: float | None, reasoning
         kwargs["reasoning_effort"] = reasoning_effort
     if temperature is not None:
         kwargs["temperature"] = temperature
+    if requires_responses_api(model):
+        kwargs["use_responses_api"] = True
     return ChatOpenAI(
         model=model,
         api_key=settings.github_token,
@@ -166,6 +180,8 @@ def _create_copilot_model(model: str, temperature: float | None, reasoning_effor
         kwargs["reasoning_effort"] = reasoning_effort
     if temperature is not None:
         kwargs["temperature"] = temperature
+    if requires_responses_api(model):
+        kwargs["use_responses_api"] = True
     return ChatOpenAI(
         model=model,
         api_key=session_token,
