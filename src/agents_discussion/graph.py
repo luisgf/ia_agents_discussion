@@ -43,10 +43,26 @@ AGENT_EVENT_FIELDS = {
 }
 
 
+def _chunk_text(content: object) -> str:
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        parts = []
+        for part in content:
+            if isinstance(part, str):
+                parts.append(part)
+            elif isinstance(part, dict) and part.get("type") in (None, "text"):
+                parts.append(part.get("text", ""))
+        return "".join(parts)
+    return ""
+
+
 def _message_content(response: object) -> str:
     content = getattr(response, "content", response)
     if isinstance(content, str):
         return content
+    if isinstance(content, list):
+        return _chunk_text(content)
     return str(content)
 
 
@@ -71,20 +87,6 @@ def _resolve_effort(state: DebateState, effort_key: str, model: str, agent_node:
             "requested_effort": effort,
         })
     return None
-
-
-def _chunk_text(content: object) -> str:
-    if isinstance(content, str):
-        return content
-    if isinstance(content, list):
-        parts = []
-        for part in content:
-            if isinstance(part, str):
-                parts.append(part)
-            elif isinstance(part, dict) and part.get("type") in (None, "text"):
-                parts.append(part.get("text", ""))
-        return "".join(parts)
-    return ""
 
 
 def _invoke_streaming(model, messages: list, control, agent_node: str, agent_role: str):
