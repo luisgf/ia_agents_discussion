@@ -1,3 +1,6 @@
+# Copyright (C) 2025 Luis González Fernández
+# SPDX-License-Identifier: GPL-3.0-or-later
+
 from pathlib import Path
 
 from agents_discussion.tools import _resolve_ssh_key

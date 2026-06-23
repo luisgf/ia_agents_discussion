@@ -1,3 +1,6 @@
+# Copyright (C) 2025 Luis González Fernández
+# SPDX-License-Identifier: GPL-3.0-or-later
+
 """Per-turn prompt scaffolding (user messages) in es/en.
 
 System prompts live in versioned templates (see prompt_store.py). This module

@@ -1,3 +1,6 @@
+# Copyright (C) 2025 Luis González Fernández
+# SPDX-License-Identifier: GPL-3.0-or-later
+
 """Markdown report generation from a stored run record."""
 from __future__ import annotations
 

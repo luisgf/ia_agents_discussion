@@ -1,3 +1,6 @@
+# Copyright (C) 2025 Luis González Fernández
+# SPDX-License-Identifier: GPL-3.0-or-later
+
 import agents_discussion.graph as g
 from agents_discussion.runtime import ToolCache
 

@@ -1,3 +1,6 @@
+# Copyright (C) 2025 Luis González Fernández
+# SPDX-License-Identifier: GPL-3.0-or-later
+
 """
 Diagnostic tools available to all agents during the debate.
 

@@ -1,3 +1,6 @@
+// Copyright (C) 2025 Luis González Fernández
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 // ── Hypothesis map (radial view) ───────────────────────────────────────
 // Consumes hypothesis_update SSE events (live or replayed) and renders an
 // incremental Cytoscape graph: topic at the center, hypotheses on concentric

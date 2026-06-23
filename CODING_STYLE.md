@@ -7,6 +7,7 @@ This document defines the coding conventions for the Agents Discussion project.
 ## Table of Contents
 
 - [Language & Tooling](#language--tooling)
+- [License Headers](#license-headers)
 - [Project Structure](#project-structure)
 - [Imports](#imports)
 - [Type Hints](#type-hints)
@@ -26,19 +27,40 @@ This document defines the coding conventions for the Agents Discussion project.
 
 - **Python**: 3.11+
 - **Formatter**: Ruff (replaces Black + isort)
-- **Linter**: Ruff with select rules from flake8, pylint, and pyupgrade
-- **Type checker**:依靠 IDE / CI type checking (mypy optional); Pydantic provides runtime validation
+- **Linter**: Ruff. The project does **not** pin an explicit rule set, so Ruff's default lint rules apply. Keep new code warning-free under `ruff check .`.
+- **Type checker**: relies on IDE / editor type checking (mypy optional); Pydantic provides runtime validation.
 - **Frontend**: Vanilla JavaScript, no build step. `marked` for Markdown, `DOMPurify` for sanitization.
 
-### Ruff Configuration (inferred from codebase)
+### Ruff Configuration (actual — see [`pyproject.toml`](pyproject.toml))
 
 ```toml
 [tool.ruff]
 target-version = "py311"
 line-length = 120
-select = ["E", "W", "F", "I", "N", "UP", "B", "C4", "SIM"]
-ignore = ["E501"]  # Line length handled by formatter
 ```
+
+> Only `target-version` and `line-length` are configured — there is **no** explicit `select`/`ignore`, so Ruff applies its default lint set. If you want stricter linting (e.g. `select = ["E", "W", "F", "I", "N", "UP", "B"]`), declare it in `pyproject.toml` first; do not assume rules that are not present there.
+
+---
+
+## License Headers
+
+Every first-party source file (`*.py`, and the project's own `*.js` under `static/js/`)
+starts with a two-line SPDX header. Vendored libraries under `static/vendor/` keep
+their upstream headers and are left untouched.
+
+```python
+# Copyright (C) 2025 Luis González Fernández
+# SPDX-License-Identifier: GPL-3.0-or-later
+```
+
+```javascript
+// Copyright (C) 2025 Luis González Fernández
+// SPDX-License-Identifier: GPL-3.0-or-later
+```
+
+New files must include this header. The project is licensed under
+**GPL-3.0-or-later**; see [`LICENSE`](LICENSE) for the full text.
 
 ---
 
@@ -450,11 +472,15 @@ body.innerHTML = DOMPurify.sanitize(html);
 
 ## Pre-commit Rules
 
-### Must Pass Before Commit
+These checks are **enforced by convention, not automation**: the repository has no
+`.pre-commit-config.yaml` and no CI workflows, so run them locally before every commit.
+
+### Run Before Commit
 
 1. `ruff check .` — no lint errors
 2. `ruff format --check .` — no formatting violations
 3. `python -m py_compile src/agents_discussion/*.py` — syntax valid
+4. `.venv/bin/python -m pytest` — pure-logic test suite stays green
 
 ### Forbidden Patterns
 

@@ -1,3 +1,6 @@
+# Copyright (C) 2025 Luis González Fernández
+# SPDX-License-Identifier: GPL-3.0-or-later
+
 """Token-based cost estimation for LLM calls.
 
 Prices are expressed in USD per 1 million tokens.  The default table covers

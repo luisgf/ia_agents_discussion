@@ -4,6 +4,10 @@ Multi-agent automated root cause analysis for production incidents.
 
 Agents Discussion simulates a structured SRE debate between specialized AI agents—each with distinct system prompts, model assignments, and tool access—to diagnose technical issues through iterative hypothesis generation, critique, rebuttal, and moderation. It combines the deep reasoning of multiple frontier language models with real-time tool invocation and human-in-the-loop oversight.
 
+[![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](LICENSE)
+![Python](https://img.shields.io/badge/python-3.11%2B-blue.svg)
+![Orchestration](https://img.shields.io/badge/LangGraph-StateGraph-9cf.svg)
+
 ---
 
 ## Quick Links
@@ -207,4 +211,14 @@ See [OPERATIONS.md](OPERATIONS.md) for deployment, monitoring, and troubleshooti
 
 ## License
 
-MIT
+This project is licensed under the **GNU General Public License v3.0 or later
+(GPL-3.0-or-later)**. See the [LICENSE](LICENSE) file for the full text.
+
+Copyright (C) 2025 Luis González Fernández
+
+This program is free software: you can redistribute it and/or modify it under
+the terms of the GNU General Public License as published by the Free Software
+Foundation, either version 3 of the License, or (at your option) any later
+version. This program is distributed in the hope that it will be useful, but
+WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+FITNESS FOR A PARTICULAR PURPOSE.

@@ -1,3 +1,6 @@
+# Copyright (C) 2025 Luis González Fernández
+# SPDX-License-Identifier: GPL-3.0-or-later
+
 """Append-only JSONL audit trail of every tool invocation made by agents.
 
 One line per tool call, written to <DATA_DIR>/audit.jsonl. Best-effort:
