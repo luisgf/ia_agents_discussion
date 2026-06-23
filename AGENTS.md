@@ -165,7 +165,8 @@ Implemented in `graph.py`. Each LLM call returns `usage_metadata`:
 ## Code conventions
 
 - **Formatter/Linter**: Ruff (target-version = py311, line-length = 120)
-- **Mandatory pre-commit**: `ruff check .` + `ruff format --check .` + `python -m py_compile *.py`
+- **Mandatory pre-commit**: `ruff check .` + `ruff format --check .` + `python -m py_compile *.py` (also enforced by CI — `.github/workflows/ci.yml`)
+- **Versioning**: SemVer driven by Conventional Commits; single source of truth `__version__` in `__init__.py` (see [Versioning & releases](#versioning--releases))
 - **Imports**: stdlib → third-party → first-party (absolute, not relative)
 - **Type hints**: required on all signatures; `str | None` (not `Optional[str]`)
 - **Logging**: `_log = logging.getLogger(__name__)`, no `print()`
@@ -174,6 +175,22 @@ Implemented in `graph.py`. Each LLM call returns `usage_metadata`:
 - **Frontend JS**: `const`/`let`, no `var`; always `esc()` for user text, `md()` for markdown
 - **New state fields**: add them in `state.py` with the appropriate reducer; initialize in `create_initial_state()`
 - **Tests**: `tests/` with pytest (`.venv/bin/python -m pytest`); pure logic without LLM (stub models, monkeypatch of `create_github_model`/`get_settings`)
+
+---
+
+## Versioning & releases
+
+- **Scheme**: Semantic Versioning (`MAJOR.MINOR.PATCH`) driven by Conventional Commits
+  (`feat` → minor; `fix`/`perf`/`refactor` → patch; `!` / `BREAKING CHANGE` → major;
+  `docs`/`style`/`chore`/`ci` → no release on their own).
+- **Single source of truth**: `__version__` in `src/agents_discussion/__init__.py`;
+  `pyproject.toml` derives it via `[tool.hatch.version]`. Never edit it in two places.
+- **Cut a release**: bump `__version__` → commit `chore(release): vX.Y.Z` → `git tag vX.Y.Z`
+  → push the tag. The tag push triggers `.github/workflows/release.yml`, which checks the
+  tag matches `__version__`, builds the sdist + wheel, and publishes a GitHub Release with
+  auto-generated notes.
+- **CI** (`.github/workflows/ci.yml`): runs `ruff check`, `ruff format --check` and `pytest`
+  on push to `main` and on PRs (ruff pinned to 0.15.18 for reproducible formatting).
 
 ---
 

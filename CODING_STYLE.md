@@ -20,6 +20,7 @@ This document defines the coding conventions for the Agents Discussion project.
 - [LangGraph Patterns](#langgraph-patterns)
 - [Frontend (JavaScript)](#frontend-javascript)
 - [Pre-commit Rules](#pre-commit-rules)
+- [Versioning & Releases](#versioning--releases)
 
 ---
 
@@ -472,8 +473,10 @@ body.innerHTML = DOMPurify.sanitize(html);
 
 ## Pre-commit Rules
 
-These checks are **enforced by convention, not automation**: the repository has no
-`.pre-commit-config.yaml` and no CI workflows, so run them locally before every commit.
+Run these locally before every commit. They are also enforced in CI
+([`.github/workflows/ci.yml`](.github/workflows/ci.yml)) on every push to `main` and on
+pull requests, so a green local run should mean a green CI run. There is no
+`.pre-commit-config.yaml`; CI is the gate.
 
 ### Run Before Commit
 
@@ -492,6 +495,43 @@ These checks are **enforced by convention, not automation**: the repository has 
 | `subprocess.run(shell=True)` unless escaped | Use argv form where possible |
 | Hardcoded secrets in source | Read from env or `.env` file via `config.py` |
 | `time.sleep()` in graph nodes | Prevents cancellation responsiveness |
+
+---
+
+## Versioning & Releases
+
+The project follows [Semantic Versioning](https://semver.org) (`MAJOR.MINOR.PATCH`),
+driven by the [Conventional Commits](https://www.conventionalcommits.org) prefixes the
+history already uses.
+
+### Single source of truth
+
+`__version__` in [`src/agents_discussion/__init__.py`](src/agents_discussion/__init__.py) is
+the only place the version is declared. `pyproject.toml` derives it via
+`[tool.hatch.version]`, so **never edit the version in two places**.
+
+### Commit → bump mapping
+
+Look at the commits since the last tag and pick the highest bump they imply:
+
+| Commit prefix | Version bump |
+|---|---|
+| `fix:`, `perf:`, `refactor:` | PATCH (`0.1.0` → `0.1.1`) |
+| `feat:` | MINOR (`0.1.0` → `0.2.0`) |
+| `feat!:` / `fix!:` / a `BREAKING CHANGE:` footer | MAJOR (`0.1.0` → `1.0.0`) |
+| `docs:`, `style:`, `test:`, `chore:`, `ci:` | none on their own |
+
+### Cutting a release
+
+1. Bump `__version__` in `__init__.py` to the new `X.Y.Z`.
+2. Commit it: `git commit -am "chore(release): vX.Y.Z"`.
+3. Tag and push: `git tag vX.Y.Z && git push && git push --tags`.
+4. Pushing the `v*` tag triggers [`.github/workflows/release.yml`](.github/workflows/release.yml),
+   which verifies the tag matches `__version__`, builds the sdist + wheel, and publishes a
+   GitHub Release with auto-generated notes.
+
+The release workflow **fails fast** if the tag does not match `__version__`, so the tag and
+the package version can never diverge.
 
 ---
 
