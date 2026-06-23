@@ -228,30 +228,3 @@ def create_github_model(
     if model.startswith("copilot/"):
         return _create_copilot_model(model.removeprefix("copilot/"), resolved_temperature, effort)
     return _create_github_models_model(model, resolved_temperature, effort)
-
-
-def create_diagnostic_model() -> BaseChatModel:
-    settings = get_settings()
-    return create_github_model(
-        settings.diagnostic_model,
-        temperature=0.2,
-        reasoning_effort=settings.diagnostic_reasoning_effort,
-    )
-
-
-def create_skeptic_model() -> BaseChatModel:
-    settings = get_settings()
-    return create_github_model(
-        settings.skeptic_model,
-        temperature=0.1,
-        reasoning_effort=settings.skeptic_reasoning_effort,
-    )
-
-
-def create_moderator_model() -> BaseChatModel:
-    settings = get_settings()
-    return create_github_model(
-        settings.moderator_model,
-        temperature=0.0,
-        reasoning_effort=settings.moderator_reasoning_effort,
-    )

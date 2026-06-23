@@ -471,6 +471,38 @@ async def refresh_models_api() -> JSONResponse:
     return JSONResponse({"models": models})
 
 
+# ── Auth (GitHub Copilot device flow) ───────────────────────────────────────────
+
+
+@app.get("/api/auth/status")
+async def auth_status_api() -> JSONResponse:
+    from agents_discussion.auth_copilot import get_auth_status  # noqa: PLC0415
+
+    status = await asyncio.to_thread(get_auth_status)
+    return JSONResponse(status)
+
+
+@app.post("/api/auth/copilot")
+async def auth_copilot_api(
+    action: Annotated[str, Form()],
+    device_code: Annotated[str, Form()] = "",
+) -> JSONResponse:
+    from agents_discussion.auth_copilot import check_device_flow, start_device_flow  # noqa: PLC0415
+
+    try:
+        if action == "start":
+            return JSONResponse(await asyncio.to_thread(start_device_flow))
+        if action == "check":
+            if not device_code:
+                return JSONResponse({"status": "error", "error": "Missing device_code."})
+            flow = await asyncio.to_thread(check_device_flow, device_code)
+            return JSONResponse({**flow, "error": flow.get("last_error")})
+        return JSONResponse({"status": "error", "error": f"Unknown action: {action}"})
+    except Exception as exc:  # noqa: BLE001
+        _log.warning("Copilot auth flow error: %s", exc)
+        return JSONResponse({"status": "error", "error": str(exc)})
+
+
 # ── Run lifecycle ─────────────────────────────────────────────────────────────
 
 

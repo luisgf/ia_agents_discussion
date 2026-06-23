@@ -272,18 +272,9 @@ GET    /api/runs/{id}/report        Markdown report
 - Markdown report: **Token consumption** section with a per-agent table and estimated cost
 - `.env`: new `MODEL_PRICES_FILE` variable documented
 
-### Mockup: interactive hypothesis map
-- **`static/vendor/cytoscape.min.js`** — Cytoscape.js 3.30.2 vendored (pattern = marked/purify)
-- **`static/mockup-hypotheses.html`** — standalone demonstration page, accessible at `/static/mockup-hypotheses.html`
-  - 6 example hypotheses with the 3 states (`active`/`confirmed`/`rejected`), 3 rounds, evidence and transitions
-  - **Radial view** (layout `cose`): PROBLEM node → agents → hypotheses; edges blue=proposed, green=confirmed, red-dashed=refuted
-  - **Timeline view** (layout `preset`): columns per round, rows per hypothesis, state evolution
-  - Round filter (All/1/2/3), ▶ Play button (reveals nodes round by round, simulating SSE), side panel with full detail and transition history
-  - Palette inherited from `app.css` (variables `--diag`, `--final`, `--err`, etc.)
-
 ## Hypothesis model (real implementation)
 
-The hypothesis map is integrated into the real UI (the **Map** tab); the mockup remains as a design reference.
+The hypothesis map is integrated into the real UI (the **Map** tab).
 
 ### `Hypothesis` model (`state.py`)
 

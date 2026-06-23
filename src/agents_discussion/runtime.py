@@ -238,18 +238,6 @@ class RunControl:
             req.event.set()
             return True
 
-    def pending_approvals(self) -> list[dict]:
-        with self._approvals_lock:
-            return [
-                {
-                    "call_id": r.call_id,
-                    "tool_name": r.tool_name,
-                    "args": r.args,
-                    "agent_role": r.agent_role,
-                }
-                for r in self._approvals.values()
-            ]
-
     # ── Human-in-the-loop comment (graph side) ───────────────────────────
 
     def wait_for_comment(self, round_number: int) -> str | None:
@@ -277,10 +265,6 @@ class RunControl:
         self._comment_text = text
         self._comment_event.set()
         return True
-
-    @property
-    def awaiting_comment(self) -> bool:
-        return self._comment_waiting
 
 
 # ── Registry ─────────────────────────────────────────────────────────────
