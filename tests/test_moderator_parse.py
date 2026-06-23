@@ -9,11 +9,11 @@ from agents_discussion.state import ModeratorDecision
 _DECISION_JSON = """{
   "status": "continue",
   "confidence": 0.5,
-  "leading_hypothesis": "Falta un índice",
+  "leading_hypothesis": "Missing an index",
   "evidence": [],
   "missing_evidence": [],
   "rejected_hypotheses": [],
-  "next_step": "verificar EXPLAIN",
+  "next_step": "verify EXPLAIN",
   "recommended_fix": null,
   "risk_level": "low",
   "validation": [],
@@ -46,19 +46,19 @@ def test_fenced_raw_rescued_without_reinvoke() -> None:
     out, usage = _decision_from_structured_result(result)
     assert out is not None
     assert out.status == "continue"
-    assert out.leading_hypothesis == "Falta un índice"
+    assert out.leading_hypothesis == "Missing an index"
     assert usage["total_tokens"] == 150
 
 
 def test_raw_with_markdown_wrapper_rescued() -> None:
-    raw = _FakeMsg(f"## Decisión del moderador\n\n{_DECISION_JSON}\n\nFin.")
+    raw = _FakeMsg(f"## Moderator decision\n\n{_DECISION_JSON}\n\nEnd.")
     result = {"raw": raw, "parsed": None, "parsing_error": Exception("x")}
     out, _ = _decision_from_structured_result(result)
     assert out is not None and out.status == "continue"
 
 
 def test_unrecoverable_raw_returns_none() -> None:
-    result = {"raw": _FakeMsg("no hay json aquí"), "parsed": None, "parsing_error": Exception("x")}
+    result = {"raw": _FakeMsg("there is no json here"), "parsed": None, "parsing_error": Exception("x")}
     out, usage = _decision_from_structured_result(result)
     assert out is None
     assert usage == {}

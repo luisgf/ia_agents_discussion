@@ -101,8 +101,8 @@ def _resolve_ssh_key(key_path: str) -> tuple[str | None, str]:
     if default and os.path.exists(default):
         if requested:
             return default, (
-                f"[nota: key_path '{key_path}' no existe; usando la clave por defecto "
-                f"'{default_raw}'. No vuelvas a pasar esa ruta.]\n"
+                f"[note: key_path '{key_path}' does not exist; using the default key "
+                f"'{default_raw}'. Do not pass that path again.]\n"
             )
         return default, ""
 
@@ -110,7 +110,7 @@ def _resolve_ssh_key(key_path: str) -> tuple[str | None, str]:
         extra = f" (default SSH_KEY_PATH '{default_raw}' not found either)" if default_raw else ""
         return None, (
             f"SSH key file not found: '{key_path}'{extra}. "
-            "Omite key_path para usar los defaults del sistema (~/.ssh/id_* o ssh-agent)."
+            "Omit key_path to use the system defaults (~/.ssh/id_* or ssh-agent)."
         )
     # Nothing requested and no (valid) default: let paramiko auto-discover.
     return None, ""

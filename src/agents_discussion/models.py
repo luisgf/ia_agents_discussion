@@ -124,9 +124,9 @@ def _create_github_models_model(
     settings = get_settings()
     if not settings.github_token:
         raise ValueError(
-            "GITHUB_TOKEN no está configurado. "
-            "Añade GITHUB_TOKEN=<tu_pat> en el fichero .env, "
-            "o usa el prefijo 'copilot/' en el nombre del modelo para usar GitHub Copilot."
+            "GITHUB_TOKEN is not configured. "
+            "Add GITHUB_TOKEN=<your_pat> to the .env file, "
+            "or use the 'copilot/' prefix in the model name to use GitHub Copilot."
         )
     kwargs: dict = {}
     if reasoning_effort:
@@ -175,9 +175,9 @@ def _create_copilot_model(model: str, temperature: float | None, reasoning_effor
     ghu_token = get_ghu_token()
     if not ghu_token:
         raise ValueError(
-            "No se encontró el token de GitHub Copilot (ghu_...). "
-            "Ejecuta: agents-discuss-copilot-auth  "
-            "o establece COPILOT_TOKEN en el entorno."
+            "GitHub Copilot token (ghu_...) not found. "
+            "Run: agents-discuss-copilot-auth  "
+            "or set COPILOT_TOKEN in the environment."
         )
 
     session_token = get_session_token(ghu_token)

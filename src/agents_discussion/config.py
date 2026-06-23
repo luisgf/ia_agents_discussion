@@ -51,7 +51,7 @@ class Settings(BaseSettings):
     # Built-in templates ship with the package; admins can add/override
     # templates by dropping <name>.<lang>.yaml files into PROMPTS_DIR.
     prompt_template: str = Field("default", alias="PROMPT_TEMPLATE")
-    prompt_language: str = Field("es", alias="PROMPT_LANGUAGE")
+    prompt_language: str = Field("en", alias="PROMPT_LANGUAGE")
     prompts_dir: Path = Field(
         default_factory=lambda: _share_dir() / "prompts",
         alias="PROMPTS_DIR",

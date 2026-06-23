@@ -9,7 +9,7 @@ from agents_discussion.state import Hypothesis, HypothesisTransition, _merge_hyp
 def _hyp(hyp_id: str = "1", **kwargs) -> Hypothesis:
     defaults = {
         "id": hyp_id,
-        "text": "Hipótesis de prueba",
+        "text": "Test hypothesis",
         "state": "active",
         "proposer": "diagnostic_agent",
         "round": 1,
@@ -37,27 +37,27 @@ def test_parse_probability_absent_or_invalid() -> None:
     assert _parse_probability("..") is None
 
 
-# ── _extract_hypotheses con [P=...] ─────────────────────────────────────
+# ── _extract_hypotheses with [P=...] ─────────────────────────────────────
 
 
 def test_extract_with_probability() -> None:
-    text = "### HYPOTHESIS-1 [P=0.6]\nText: Falta un índice.\n"
+    text = "### HYPOTHESIS-1 [P=0.6]\nText: A missing index.\n"
     hyps = _extract_hypotheses(text, "diagnostic_agent", 1)
     assert len(hyps) == 1
     assert hyps[0].probability == 0.6
 
 
 def test_extract_probability_with_spaces() -> None:
-    text = "### HYPOTHESIS-2 [ P = 0.75 ]\nText: Pool saturado.\n"
+    text = "### HYPOTHESIS-2 [ P = 0.75 ]\nText: Saturated pool.\n"
     hyps = _extract_hypotheses(text, "diagnostic_agent", 1)
     assert hyps[0].probability == 0.75
 
 
 def test_extract_without_probability_backcompat() -> None:
-    text = "### HYPOTHESIS-1\nText: Falta un índice.\n"
+    text = "### HYPOTHESIS-1\nText: A missing index.\n"
     hyps = _extract_hypotheses(text, "diagnostic_agent", 1)
     assert hyps[0].probability is None
-    assert hyps[0].text == "Falta un índice."
+    assert hyps[0].text == "A missing index."
 
 
 def test_extract_probability_out_of_range_clamped() -> None:
@@ -68,24 +68,24 @@ def test_extract_probability_out_of_range_clamped() -> None:
 
 def test_extract_multiple_blocks_mixed() -> None:
     text = (
-        "### HYPOTHESIS-1 [P=0.7]\nText: Causa A.\n\n"
-        "- [tool:run_ssh_command] evidencia A\n\n"
-        "### HYPOTHESIS-2\nText: Causa B.\n"
+        "### HYPOTHESIS-1 [P=0.7]\nText: Cause A.\n\n"
+        "- [tool:run_ssh_command] evidence A\n\n"
+        "### HYPOTHESIS-2\nText: Cause B.\n"
     )
     hyps = _extract_hypotheses(text, "diagnostic_agent", 2)
     assert [h.id for h in hyps] == ["1", "2"]
     assert hyps[0].probability == 0.7
-    assert hyps[0].supporting_evidence == ["[tool:run_ssh_command] evidencia A"]
+    assert hyps[0].supporting_evidence == ["[tool:run_ssh_command] evidence A"]
     assert hyps[1].probability is None
 
 
 def test_fallback_has_no_probability() -> None:
-    hyps = _extract_hypotheses("Sin formato estructurado.", "diagnostic_agent", 3)
+    hyps = _extract_hypotheses("No structured format.", "diagnostic_agent", 3)
     assert hyps[0].id == "R3-F1"
     assert hyps[0].probability is None
 
 
-# ── _merge_hypotheses con probability ───────────────────────────────────
+# ── _merge_hypotheses with probability ───────────────────────────────────
 
 
 def test_merge_incoming_probability_wins() -> None:
@@ -111,7 +111,7 @@ def test_format_omits_probability_when_none() -> None:
     assert "[P=" not in out
 
 
-# ── Recalibración del escéptico (estado + P desde snippet) ─────────────
+# ── Skeptic recalibration (state + P from snippet) ─────────────
 
 
 def _run_skeptic(monkeypatch, content: str, hypotheses: list[Hypothesis]) -> dict:
@@ -138,7 +138,7 @@ def _run_skeptic(monkeypatch, content: str, hypotheses: list[Hypothesis]) -> dic
 
 
 def test_skeptic_extracts_state_and_probability(monkeypatch) -> None:
-    content = "[hypothesis:1] rejected [P=0.1]\nReason: contradice las métricas.\n"
+    content = "[hypothesis:1] rejected [P=0.1]\nReason: contradicts the metrics.\n"
     result = _run_skeptic(monkeypatch, content, [_hyp(probability=0.7)])
     updated = result["hypotheses"]
     assert len(updated) == 1
@@ -148,18 +148,18 @@ def test_skeptic_extracts_state_and_probability(monkeypatch) -> None:
 
 
 def test_skeptic_probability_only_update(monkeypatch) -> None:
-    content = "[hypothesis:1] needs_evidence [P=0.45], falta confirmar con métricas.\n"
+    content = "[hypothesis:1] needs_evidence [P=0.45], still to be confirmed with metrics.\n"
     result = _run_skeptic(monkeypatch, content, [_hyp(probability=0.7)])
     updated = result["hypotheses"]
     assert len(updated) == 1
     assert updated[0].state == "active"
     assert updated[0].probability == 0.45
-    # Sin cambio de estado no se añade transición
+    # Without a state change no transition is added
     assert all(t.agent != "skeptic_agent" for t in updated[0].transitions)
 
 
 def test_skeptic_no_mention_no_update(monkeypatch) -> None:
-    result = _run_skeptic(monkeypatch, "No menciono nada.", [_hyp()])
+    result = _run_skeptic(monkeypatch, "I mention nothing.", [_hyp()])
     assert result["hypotheses"] == []
 
 

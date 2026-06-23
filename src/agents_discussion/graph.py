@@ -39,9 +39,9 @@ _log = logging.getLogger(__name__)
 
 
 AGENT_EVENT_FIELDS = {
-    "diagnostic_agent": ("diagnostic_response", "Diagnóstico Principal"),
-    "skeptic_agent": ("skeptic_response", "Revisor Escéptico"),
-    "diagnostic_rebuttal_agent": ("diagnostic_rebuttal", "Contrarréplica"),
+    "diagnostic_agent": ("diagnostic_response", "Primary Diagnosis"),
+    "skeptic_agent": ("skeptic_response", "Skeptical Reviewer"),
+    "diagnostic_rebuttal_agent": ("diagnostic_rebuttal", "Rebuttal"),
 }
 
 
@@ -205,7 +205,7 @@ def _creation_transition(proposer: str, round_number: int) -> HypothesisTransiti
         from_state=None,
         to_state="active",
         agent=proposer,
-        note="Hipótesis propuesta",
+        note="Hypothesis proposed",
     )
 
 
@@ -424,9 +424,7 @@ def _run_with_tools(
             elif cache_hit is not None:
                 # Same command already approved and executed this round: serve the
                 # stored output without re-executing or re-asking for approval.
-                result = (
-                    f"[cached: ya ejecutado por {cache_hit.agent_role} en ronda {cache_hit.round}]\n{cache_hit.result}"
-                )
+                result = f"[cached: already executed by {cache_hit.agent_role} in round {cache_hit.round}]\n{cache_hit.result}"
                 error = False
                 approval = "cached"
                 duration_ms = 0
@@ -436,10 +434,10 @@ def _run_with_tools(
                     result, error = _execute(tool_fn)
                 else:
                     result = (
-                        "El operador no aprobó esta llamada "
-                        f"({'timeout' if approval == 'timeout' else 'rechazada'}). "
-                        "No la repitas; usa otra herramienta o continúa con la "
-                        "información disponible."
+                        "The operator did not approve this call "
+                        f"({'timeout' if approval == 'timeout' else 'rejected'}). "
+                        "Do not repeat it; use another tool or continue with the "
+                        "available information."
                     )
                     error = False
             else:
@@ -483,11 +481,11 @@ def _run_with_tools(
             messages.append(
                 HumanMessage(
                     content=(
-                        "Una o más herramientas devolvieron error. "
-                        "Analiza los mensajes, corrige los parámetros si es posible "
-                        "e intenta de nuevo con una estrategia diferente. "
-                        "Si el error no es recuperable, usa otra herramienta o "
-                        "documenta la limitación en tu respuesta final."
+                        "One or more tools returned an error. "
+                        "Analyze the messages, fix the parameters if possible "
+                        "and try again with a different strategy. "
+                        "If the error is not recoverable, use another tool or "
+                        "document the limitation in your final response."
                     )
                 )
             )
@@ -498,15 +496,15 @@ def _run_with_tools(
 
     content = _message_content(response)
     if not content.strip():
-        # Algunos modelos razonadores (p.ej. Kimi) cierran una cadena larga de tools
-        # con un mensaje visible vacío. Pedir la respuesta final una vez antes de rendirse.
+        # Some reasoning models (e.g. Kimi) close a long chain of tool calls
+        # with an empty visible message. Ask for the final response once before giving up.
         _log.warning("%s returned empty final content after %d tool calls; nudging once", agent_node, call_count)
         messages.append(
             HumanMessage(
                 content=(
-                    "No has entregado tu respuesta final. Escribe AHORA tu informe final "
-                    "completo según el formato pedido en el mensaje inicial, sin llamar "
-                    "a más herramientas."
+                    "You have not delivered your final response. Write your complete final "
+                    "report NOW following the format requested in the initial message, without "
+                    "calling any more tools."
                 )
             )
         )
@@ -518,7 +516,7 @@ def _run_with_tools(
         content = _message_content(response)
 
     if not content.strip():
-        content = f"(El agente no entregó respuesta final tras {call_count} llamadas a herramientas.)"
+        content = f"(The agent returned no final response after {call_count} tool calls.)"
 
     node_usage = {
         "input_tokens": total_input,
@@ -576,7 +574,7 @@ def diagnostic_agent(state: DebateState) -> dict[str, object]:
         "diagnostic_reasoning_effort",
         state["diagnostic_model"],
         "diagnostic_agent",
-        "Diagnóstico Principal",
+        "Primary Diagnosis",
     )
     prompt_history, history_summary, mode = _prompt_history(state, exclude_current_round=False)
     content, tool_log, usage = _run_with_tools(
@@ -589,7 +587,7 @@ def diagnostic_agent(state: DebateState) -> dict[str, object]:
             state["round"],
             prompt_history,
             hypotheses=state.get("hypotheses", []),
-            language=state.get("language", "es"),
+            language=state.get("language", "en"),
             history_summary=history_summary,
             mode=mode,
         ),
@@ -636,8 +634,8 @@ def _should_skip(state: DebateState, agent_node: str) -> bool:
 def skeptic_agent(state: DebateState) -> dict[str, object]:
     if _should_skip(state, "skeptic_agent"):
         return {
-            "skeptic_response": "(Fase escéptica omitida por decisión del moderador.)",
-            "history": [DebateMessage(role="skeptic_agent", content="(omitido)")],
+            "skeptic_response": "(Skeptic phase skipped by moderator decision.)",
+            "history": [DebateMessage(role="skeptic_agent", content="(skipped)")],
             "tool_calls_log": [],
         }
 
@@ -647,7 +645,7 @@ def skeptic_agent(state: DebateState) -> dict[str, object]:
         "skeptic_reasoning_effort",
         state["skeptic_model"],
         "skeptic_agent",
-        "Revisor Escéptico",
+        "Skeptical Reviewer",
     )
     prompt_history, history_summary, mode = _prompt_history(state, exclude_current_round=True)
     content, tool_log, usage = _run_with_tools(
@@ -660,7 +658,7 @@ def skeptic_agent(state: DebateState) -> dict[str, object]:
             state["diagnostic_response"],
             state.get("hypotheses", []),
             prompt_history,
-            language=state.get("language", "es"),
+            language=state.get("language", "en"),
             history_summary=history_summary,
             mode=mode,
         ),
@@ -684,7 +682,7 @@ def skeptic_agent(state: DebateState) -> dict[str, object]:
         if re.search(r"\brejected\b|\brechazada?\b|\binválida?\b", snippet, re.IGNORECASE):
             new_state = "rejected"
             reason_match = re.search(r"[Rr]eason:\s*(.+?)(?=\n\n|\Z)", snippet, re.DOTALL)
-            rejected_reason = reason_match.group(1).strip() if reason_match else "Rechazada por el escéptico."
+            rejected_reason = reason_match.group(1).strip() if reason_match else "Rejected by the skeptic."
         elif re.search(r"\baccepted\b|\baceptada?\b|\bconfirmada?\b", snippet, re.IGNORECASE):
             new_state = "confirmed"
         prob_match = _SNIPPET_P_RE.search(snippet)
@@ -704,7 +702,7 @@ def skeptic_agent(state: DebateState) -> dict[str, object]:
                     from_state=h.state,
                     to_state=new_state,
                     agent="skeptic_agent",
-                    note=rejected_reason or "Confirmada por el escéptico.",
+                    note=rejected_reason or "Confirmed by the skeptic.",
                 )
             ]
         updated_hypotheses.append(new_h)
@@ -721,8 +719,8 @@ def skeptic_agent(state: DebateState) -> dict[str, object]:
 def diagnostic_rebuttal_agent(state: DebateState) -> dict[str, object]:
     if _should_skip(state, "diagnostic_rebuttal_agent"):
         return {
-            "diagnostic_rebuttal": "(Fase de contrarréplica omitida por decisión del moderador.)",
-            "history": [DebateMessage(role="diagnostic_rebuttal", content="(omitido)")],
+            "diagnostic_rebuttal": "(Rebuttal phase skipped by moderator decision.)",
+            "history": [DebateMessage(role="diagnostic_rebuttal", content="(skipped)")],
             "tool_calls_log": [],
         }
 
@@ -732,7 +730,7 @@ def diagnostic_rebuttal_agent(state: DebateState) -> dict[str, object]:
         "diagnostic_reasoning_effort",
         state["diagnostic_model"],
         "diagnostic_rebuttal_agent",
-        "Contrarréplica",
+        "Rebuttal",
     )
     prompt_history, history_summary, mode = _prompt_history(state, exclude_current_round=True)
     content, tool_log, usage = _run_with_tools(
@@ -746,7 +744,7 @@ def diagnostic_rebuttal_agent(state: DebateState) -> dict[str, object]:
             state["skeptic_response"],
             state.get("hypotheses", []),
             history=prompt_history,
-            language=state.get("language", "es"),
+            language=state.get("language", "en"),
             history_summary=history_summary,
             mode=mode,
         ),
@@ -847,13 +845,13 @@ def moderator_agent(state: DebateState) -> dict[str, object]:
         control.raise_if_cancelled()
 
     template = _template_for(state)
-    language = state.get("language", "es")
+    language = state.get("language", "en")
     effort = _resolve_effort(
         state,
         "moderator_reasoning_effort",
         state["moderator_model"],
         "moderator_agent",
-        "Moderador",
+        "Moderator",
     )
     model = create_github_model(state["moderator_model"], temperature=0.0, reasoning_effort=effort)
 
@@ -936,17 +934,17 @@ def summarize_history(state: DebateState) -> dict[str, object]:
         return {}
 
     previous_summary = state.get("history_summary", "")
-    previous_block = f"Resumen acumulado de las rondas anteriores:\n{previous_summary}\n\n" if previous_summary else ""
+    previous_block = f"Cumulative summary of the previous rounds:\n{previous_summary}\n\n" if previous_summary else ""
     summary_prompt_text = (
-        "Resume el estado de un debate de diagnóstico técnico en un párrafo "
-        "conciso (máximo 400 palabras) que capture:\n"
-        "1. Las hipótesis principales discutidas y su estado.\n"
-        "2. La evidencia clave presentada.\n"
-        "3. Los puntos de desacuerdo o incertidumbre pendientes.\n"
-        "No incluyas detalles de implementación del debate; enfócate en el contenido técnico.\n"
-        "Integra el resumen acumulado previo (si existe) con los mensajes nuevos en un único resumen.\n\n"
+        "Summarize the state of a technical diagnosis debate in a concise "
+        "paragraph (maximum 400 words) capturing:\n"
+        "1. The main hypotheses discussed and their state.\n"
+        "2. The key evidence presented.\n"
+        "3. The pending points of disagreement or uncertainty.\n"
+        "Do not include debate implementation details; focus on the technical content.\n"
+        "Integrate the previous cumulative summary (if any) with the new messages into a single summary.\n\n"
         + previous_block
-        + "Mensajes nuevos a integrar:\n"
+        + "New messages to integrate:\n"
         + "\n\n".join(f"[{m.role}]\n{m.content[:2000]}" for m in last_msgs)
     )
 
@@ -1003,52 +1001,52 @@ def user_input_gate(state: DebateState) -> dict[str, object]:
 def finalize(state: DebateState) -> dict[str, object]:
     decision = state["moderator_decision"]
     if decision is None:
-        return {"final_result": "El debate terminó sin decisión del moderador."}
+        return {"final_result": "The debate ended without a moderator decision."}
 
     hypotheses_section = (
         _format_list([f"{h.id} [{h.state}]: {h.text}" for h in state.get("hypotheses", [])])
         if state.get("hypotheses")
-        else "- Ninguna."
+        else "- None."
     )
 
     result = f"""
-Estado: {decision.status}
-Confianza: {decision.confidence:.2f}
-Riesgo: {decision.risk_level}
+Status: {decision.status}
+Confidence: {decision.confidence:.2f}
+Risk: {decision.risk_level}
 
-Hipótesis principal:
-{decision.leading_hypothesis or "No determinada."}
+Leading hypothesis:
+{decision.leading_hypothesis or "Not determined."}
 
-Hipótesis en debate:
+Hypotheses under debate:
 {hypotheses_section}
 
-Evidencia:
+Evidence:
 {_format_list(decision.evidence)}
 
-Evidencia faltante:
+Missing evidence:
 {_format_list(decision.missing_evidence)}
 
-Hipótesis rechazadas:
+Rejected hypotheses:
 {_format_list(decision.rejected_hypotheses)}
 
-Siguiente paso:
+Next step:
 {decision.next_step}
 
-Fix recomendado:
-{decision.recommended_fix or "No recomendado todavía."}
+Recommended fix:
+{decision.recommended_fix or "Not recommended yet."}
 
-Validación:
+Validation:
 {_format_list(decision.validation)}
 
-Motivo de cierre:
-{decision.stop_reason or "No especificado."}
+Stop reason:
+{decision.stop_reason or "Not specified."}
 """.strip()
     return {"final_result": result}
 
 
 def _format_list(items: list[str]) -> str:
     if not items:
-        return "- Ninguno."
+        return "- None."
     return "\n".join(f"- {item}" for item in items)
 
 

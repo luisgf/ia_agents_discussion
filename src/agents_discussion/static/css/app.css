@@ -855,7 +855,7 @@ details.adv > summary::-webkit-details-marker { display: none; }
 
 /* ── Responsive ─────────────────────────────────────────────── */
 
-/* Botón hamburguesa (oculto en desktop) */
+/* Hamburger button (hidden on desktop) */
 .mobile-menu-btn {
   display: none;
   position: absolute; top: 18px; right: 14px;
@@ -864,7 +864,7 @@ details.adv > summary::-webkit-details-marker { display: none; }
   line-height: 1; z-index: 10;
 }
 
-/* Overlay oscuro cuando el sidebar está abierto en móvil */
+/* Dark overlay when the sidebar is open on mobile */
 .mobile-overlay {
   display: none;
   position: fixed; inset: 0; background: rgba(0,0,0,0.35);
@@ -881,7 +881,7 @@ details.adv > summary::-webkit-details-marker { display: none; }
     height: 100vh;
   }
 
-  /* Sidebar se convierte en drawer off-canvas */
+  /* Sidebar becomes an off-canvas drawer */
   .sidebar {
     position: fixed; top: 0; left: 0; bottom: 0;
     width: 85%; max-width: 320px; min-width: 260px;
@@ -897,12 +897,12 @@ details.adv > summary::-webkit-details-marker { display: none; }
 
   .sidebar-head {
     position: relative;
-    padding-right: 44px; /* espacio para el botón */
+    padding-right: 44px; /* space for the button */
   }
 
   .mobile-menu-btn { display: block; }
 
-  /* La conversación ocupa toda la pantalla */
+  /* The conversation takes up the full screen */
   .convo {
     flex: 1;
     overflow: hidden;
@@ -910,20 +910,20 @@ details.adv > summary::-webkit-details-marker { display: none; }
     width: 100%;
   }
 
-  /* Tabs con más padding táctil */
+  /* Tabs with more touch padding */
   .convo-tabs { padding: 0 14px; }
   .tab-btn { padding: 16px 12px 14px; font-size: 11px; }
 
-  /* Thread / History con padding reducido */
+  /* Thread / History with reduced padding */
   #thread,
   #hist-panel { padding: 14px 14px 24px; }
 
-  /* Tool call wrappers más compactos */
+  /* More compact tool call wrappers */
   .tc-wrapper,
   .tc-group,
   .appr-card { margin-left: 8px; margin-right: 8px; }
 
-  /* Tarjetas de agente más limpias */
+  /* Cleaner agent cards */
   .acard-head { padding: 10px 12px; }
   .card-body, .mod-body { padding: 10px 12px; font-size: 13px; }
 
@@ -931,20 +931,20 @@ details.adv > summary::-webkit-details-marker { display: none; }
   .empty-state h2 { font-size: 11px; }
   .empty-state p { max-width: 100%; font-size: 12px; }
 
-  /* Historial compacto */
+  /* Compact history */
   .hist-table th,
   .hist-table td { padding: 8px; }
   .hist-topic { max-width: 160px; }
   .hist-models { max-width: 100px; }
   .hist-actions { flex-wrap: wrap; }
 
-  /* Panel resume */
+  /* Resume panel */
   .resume-panel { padding: 12px 16px; }
 
-  /* Badges no rompan */
+  /* Keep badges from breaking */
   .dbadge, .rbadge { font-size: 8px; padding: 2px 5px; }
 
-  /* Stack para stats finales */
+  /* Stack for final stats */
   .final-stats { grid-template-columns: repeat(3, 1fr); }
 
   /* Conf row */
@@ -952,10 +952,10 @@ details.adv > summary::-webkit-details-marker { display: none; }
   .conf-track { height: 3px; }
   .conf-val { min-width: 32px; font-size: 11px; }
 
-  /* Botones más táctiles */
+  /* More touch-friendly buttons */
   .btn-run, .btn-stop { padding: 14px 16px; font-size: 12px; }
 
-  /* Mod row2 apilado */
+  /* Stacked mod row2 */
   .mod-row2 { grid-template-columns: 1fr; gap: 10px; }
 }
 

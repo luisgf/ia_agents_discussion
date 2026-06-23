@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="es">
+<html lang="en">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -24,103 +24,103 @@
         </div>
         <div>
           <div class="brand-name">Agents Discussion</div>
-          <div class="brand-sub">Diagnóstico técnico multiagente</div>
+          <div class="brand-sub">Multi-agent technical diagnosis</div>
         </div>
       </div>
-      <button id="mobile-menu-btn" class="mobile-menu-btn" aria-label="Menú">☰</button>
+      <button id="mobile-menu-btn" class="mobile-menu-btn" aria-label="Menu">☰</button>
       <div id="status-pill" class="status-pill idle">
         <div class="dot"></div>
-        <span id="status-text">Listo</span>
+        <span id="status-text">Ready</span>
       </div>
     </div>
 
     <div class="sidebar-body">
       <form id="run-form">
-        <div class="fsect-title">Incidente</div>
+        <div class="fsect-title">Incident</div>
 
         <div class="field">
-          <label for="topic">Descripción del problema</label>
+          <label for="topic">Problem description</label>
           <textarea id="topic" name="topic"
-            placeholder="Ej: El endpoint /orders tarda 8 s desde el último deploy" required></textarea>
+            placeholder="E.g.: The /orders endpoint takes 8 s since the last deploy" required></textarea>
         </div>
 
         <div class="field">
-          <label for="incident_file">Logs / trazas del incidente</label>
+          <label for="incident_file">Incident logs / traces</label>
           <input id="incident_file" name="incident_file" type="file">
         </div>
 
         <div class="field">
-          <label for="base_context">Contexto base del sistema</label>
+          <label for="base_context">System base context</label>
           <input id="base_context" name="base_context" type="file" multiple>
-          <div class="field-hint">Arquitectura, SLAs, servicios, restricciones.</div>
+          <div class="field-hint">Architecture, SLAs, services, constraints.</div>
         </div>
 
         <div class="two-col">
           <div class="field">
-            <label for="sel-template">Tipo de incidente</label>
+            <label for="sel-template">Incident type</label>
             <select id="sel-template" name="template">
               <option value="">General</option>
             </select>
           </div>
           <div class="field">
-            <label for="sel-lang">Idioma</label>
+            <label for="sel-lang">Language</label>
             <select id="sel-lang" name="language">
+              <option value="en" selected>English</option>
               <option value="es">Español</option>
-              <option value="en">English</option>
             </select>
           </div>
         </div>
 
         <label class="checkbox-row" style="margin-top:4px">
           <input id="require_approval" type="checkbox" checked>
-          <span>Aprobar manualmente las herramientas sensibles</span>
+          <span>Manually approve sensitive tools</span>
         </label>
         <label class="checkbox-row" style="margin-top:6px">
           <input id="pause_rounds" type="checkbox">
-          <span>Pausar entre rondas para añadir comentarios</span>
+          <span>Pause between rounds to add comments</span>
         </label>
 
         <!-- ── Model selector ──────────────────────── -->
         <details class="adv" id="models-sect" open style="margin-top:10px">
-          <summary>Modelos</summary>
+          <summary>Models</summary>
           <div class="adv-body">
             <div class="field">
-              <label for="sel-diag">Agente Diagnóstico</label>
+              <label for="sel-diag">Diagnosis Agent</label>
               <select id="sel-diag" name="diagnostic_model" disabled>
-                <option value="">Cargando modelos...</option>
+                <option value="">Loading models...</option>
               </select>
-              <label for="sel-diag-effort">Nivel de thinking</label>
+              <label for="sel-diag-effort">Thinking level</label>
               <select id="sel-diag-effort" name="diagnostic_reasoning_effort">
-                <option value="none">Ninguno</option>
-                <option value="low">Bajo</option>
-                <option value="medium">Medio</option>
-                <option value="high">Alto</option>
+                <option value="none">None</option>
+                <option value="low">Low</option>
+                <option value="medium">Medium</option>
+                <option value="high">High</option>
               </select>
             </div>
             <div class="field">
-              <label for="sel-skeptic">Revisor Escéptico</label>
+              <label for="sel-skeptic">Skeptical Reviewer</label>
               <select id="sel-skeptic" name="skeptic_model" disabled>
-                <option value="">Cargando modelos...</option>
+                <option value="">Loading models...</option>
               </select>
-              <label for="sel-skeptic-effort">Nivel de thinking</label>
+              <label for="sel-skeptic-effort">Thinking level</label>
               <select id="sel-skeptic-effort" name="skeptic_reasoning_effort">
-                <option value="none">Ninguno</option>
-                <option value="low">Bajo</option>
-                <option value="medium">Medio</option>
-                <option value="high">Alto</option>
+                <option value="none">None</option>
+                <option value="low">Low</option>
+                <option value="medium">Medium</option>
+                <option value="high">High</option>
               </select>
             </div>
             <div class="field">
-              <label for="sel-mod">Moderador</label>
+              <label for="sel-mod">Moderator</label>
               <select id="sel-mod" name="moderator_model" disabled>
-                <option value="">Cargando modelos...</option>
+                <option value="">Loading models...</option>
               </select>
-              <label for="sel-mod-effort">Nivel de thinking</label>
+              <label for="sel-mod-effort">Thinking level</label>
               <select id="sel-mod-effort" name="moderator_reasoning_effort">
-                <option value="none">Ninguno</option>
-                <option value="low">Bajo</option>
-                <option value="medium">Medio</option>
-                <option value="high">Alto</option>
+                <option value="none">None</option>
+                <option value="low">Low</option>
+                <option value="medium">Medium</option>
+                <option value="high">High</option>
               </select>
             </div>
           </div>
@@ -128,60 +128,60 @@
 
         <!-- ── Advanced options ────────────────────── -->
         <details class="adv" style="margin-top:6px">
-          <summary>Opciones avanzadas</summary>
+          <summary>Advanced options</summary>
           <div class="adv-body">
-            <div class="fsect-title" style="margin-top:2px">Código fuente</div>
+            <div class="fsect-title" style="margin-top:2px">Source code</div>
             <div class="field">
-              <label for="project_path">Ruta del proyecto</label>
+              <label for="project_path">Project path</label>
               <input id="project_path" name="project_path" type="text"
-                placeholder="/home/usuario/sources/mi-app">
+                placeholder="/home/user/sources/my-app">
             </div>
             <div class="field">
-              <label for="include_patterns">Patrones de inclusión</label>
+              <label for="include_patterns">Include patterns</label>
               <input id="include_patterns" name="include_patterns" type="text"
                 placeholder="src/**/*.py, tests/**/*.py">
             </div>
             <div class="two-col">
               <div class="field">
-                <label for="max_files">Máx. archivos</label>
+                <label for="max_files">Max. files</label>
                 <input id="max_files" name="max_files" type="number" min="1" value="20">
               </div>
               <div class="field">
-                <label for="max_chars_per_file">Máx. chars/archivo</label>
+                <label for="max_chars_per_file">Max. chars/file</label>
                 <input id="max_chars_per_file" name="max_chars_per_file" type="number" min="1" value="12000">
               </div>
             </div>
             <label class="checkbox-row">
               <input id="no_redact_context" name="no_redact_context" type="checkbox">
-              <span>No redactar secretos del contexto</span>
+              <span>Do not redact secrets from the context</span>
             </label>
-            <div class="fsect-title" style="margin-top:10px">SSH (opcional, para tools)</div>
+            <div class="fsect-title" style="margin-top:10px">SSH (optional, for tools)</div>
             <div class="field">
-              <label for="ssh_host">Host SSH</label>
-              <input id="ssh_host" name="ssh_host" type="text" placeholder="servidor.ejemplo.com">
+              <label for="ssh_host">SSH host</label>
+              <input id="ssh_host" name="ssh_host" type="text" placeholder="server.example.com">
             </div>
             <div class="two-col">
               <div class="field">
-                <label for="ssh_user">Usuario SSH</label>
+                <label for="ssh_user">SSH user</label>
                 <input id="ssh_user" name="ssh_user" type="text" placeholder="admin">
               </div>
               <div class="field">
-                <label for="ssh_port">Puerto</label>
+                <label for="ssh_port">Port</label>
                 <input id="ssh_port" name="ssh_port" type="number" min="1" max="65535" value="22">
               </div>
             </div>
             <div class="field">
-              <label for="ssh_key_path">Ruta clave privada</label>
+              <label for="ssh_key_path">Private key path</label>
               <input id="ssh_key_path" name="ssh_key_path" type="text" placeholder="~/.ssh/id_rsa">
-              <div class="field-hint">Sobreescribe SSH_KEY_PATH del .env para este debate.</div>
+              <div class="field-hint">Overrides SSH_KEY_PATH from .env for this debate.</div>
             </div>
           </div>
         </details>
 
-        <button id="start-button" class="btn-run" type="submit">Iniciar diagnóstico</button>
+        <button id="start-button" class="btn-run" type="submit">Start diagnosis</button>
       </form>
 
-      <button id="stop-button" class="btn-stop hidden" type="button">&#9632; Detener debate</button>
+      <button id="stop-button" class="btn-stop hidden" type="button">&#9632; Stop debate</button>
     </div>
   </aside>
 
@@ -194,23 +194,23 @@
     <!-- Tab strip -->
     <div class="convo-tabs">
       <button class="tab-btn active" id="tab-debate">Debate</button>
-      <button class="tab-btn" id="tab-map">Mapa</button>
-      <button class="tab-btn" id="tab-hist">Historial</button>
+      <button class="tab-btn" id="tab-map">Map</button>
+      <button class="tab-btn" id="tab-hist">History</button>
       <div class="convo-actions">
-        <button class="btn-sm btn-act hidden" id="btn-export" type="button">&#8595; Exportar informe</button>
-        <button class="btn-sm btn-act hidden" id="btn-resume" type="button">&#8635; Continuar con nueva evidencia</button>
+        <button class="btn-sm btn-act hidden" id="btn-export" type="button">&#8595; Export report</button>
+        <button class="btn-sm btn-act hidden" id="btn-resume" type="button">&#8635; Continue with new evidence</button>
       </div>
     </div>
 
     <!-- Resume panel -->
     <div id="resume-panel" class="resume-panel hidden">
-      <div class="resume-title">Reanudar debate con nueva evidencia</div>
-      <p class="resume-hint">Los agentes retomarán el historial completo del debate anterior con la evidencia que aportes ahora.</p>
-      <textarea id="resume-evidence" placeholder="Pega aquí la evidencia nueva: logs, métricas, resultados de los pasos pedidos por el moderador..."></textarea>
+      <div class="resume-title">Resume debate with new evidence</div>
+      <p class="resume-hint">The agents will pick up the full history of the previous debate with the evidence you provide now.</p>
+      <textarea id="resume-evidence" placeholder="Paste the new evidence here: logs, metrics, results of the steps requested by the moderator..."></textarea>
       <input id="resume-files" type="file" multiple>
       <div class="resume-actions">
-        <button class="btn-sm btn-open" id="resume-submit" type="button">Reanudar debate</button>
-        <button class="btn-sm btn-del" id="resume-cancel" type="button">Cancelar</button>
+        <button class="btn-sm btn-open" id="resume-submit" type="button">Resume debate</button>
+        <button class="btn-sm btn-del" id="resume-cancel" type="button">Cancel</button>
       </div>
     </div>
 
@@ -220,13 +220,13 @@
         <svg width="52" height="52" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round">
           <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
         </svg>
-        <h2>Sin debate activo</h2>
-        <p>Define el problema en el formulario y lanza el diagnóstico para ver cómo razonan los agentes.</p>
+        <h2>No active debate</h2>
+        <p>Define the problem in the form and launch the diagnosis to see how the agents reason.</p>
       </div>
 
       <div id="typing-indicator" class="typing hidden">
         <div class="typing-dots"><span></span><span></span><span></span></div>
-        <span id="typing-label" class="typing-lbl">Analizando...</span>
+        <span id="typing-label" class="typing-lbl">Analyzing...</span>
       </div>
     </div>
 
@@ -239,15 +239,15 @@
     <div id="map-panel">
       <div class="map-toolbar">
         <div class="map-round-filter" id="map-round-filter">
-          <label>Ronda</label>
+          <label>Round</label>
           <!-- round buttons generated by HypoMap -->
         </div>
-        <button class="map-btn-action" id="map-play" type="button">&#9654; Reproducir</button>
+        <button class="map-btn-action" id="map-play" type="button">&#9654; Replay</button>
         <div class="map-legend">
-          <div class="map-legend-item"><span class="map-legend-dot active"></span>Activa</div>
-          <div class="map-legend-item"><span class="map-legend-dot confirmed"></span>Confirmada</div>
-          <div class="map-legend-item"><span class="map-legend-dot rejected"></span>Refutada</div>
-          <div class="map-legend-item"><span class="map-legend-dot leader"></span>L&iacute;der</div>
+          <div class="map-legend-item"><span class="map-legend-dot active"></span>Active</div>
+          <div class="map-legend-item"><span class="map-legend-dot confirmed"></span>Confirmed</div>
+          <div class="map-legend-item"><span class="map-legend-dot rejected"></span>Refuted</div>
+          <div class="map-legend-item"><span class="map-legend-dot leader"></span>Leader</div>
         </div>
       </div>
       <div id="map-leader-strip" class="map-leader-strip hidden"></div>
@@ -260,10 +260,10 @@
               <circle cx="5" cy="19" r="2"/><circle cx="19" cy="19" r="2"/>
               <path d="M6.5 6.5 10 10m7.5-3.5L14 10m-7.5 7.5L10 14m7.5 3.5L14 14"/>
             </svg>
-            <h2>Sin datos de hip&oacute;tesis</h2>
-            <p>Este debate no tiene eventos de hip&oacute;tesis (runs antiguos) o a&uacute;n no se ha propuesto ninguna.</p>
+            <h2>No hypothesis data</h2>
+            <p>This debate has no hypothesis events (old runs) or none has been proposed yet.</p>
           </div>
-          <button class="map-btn-fit hidden" id="map-fit" type="button" title="Ajustar vista">&#10530;</button>
+          <button class="map-btn-fit hidden" id="map-fit" type="button" title="Fit view">&#10530;</button>
           <div id="map-tooltip" class="map-tooltip hidden"></div>
         </div>
         <div class="map-detail-panel">
@@ -271,48 +271,48 @@
             <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
               <circle cx="12" cy="12" r="9"/><path d="M12 8v4m0 4h.01"/>
             </svg>
-            <span>Selecciona una hip&oacute;tesis<br>para ver sus detalles</span>
+            <span>Select a hypothesis<br>to see its details</span>
           </div>
           <div id="map-panel-detail" class="map-panel-detail hidden">
             <div class="map-panel-header">
               <div>
-                <div class="map-panel-header-title">Hip&oacute;tesis</div>
+                <div class="map-panel-header-title">Hypothesis</div>
                 <div id="map-panel-id" class="map-panel-id"></div>
               </div>
               <button class="map-panel-close" id="map-panel-close" type="button">&#10005;</button>
             </div>
             <div class="map-panel-body">
               <div>
-                <div class="map-field-label">Estado</div>
+                <div class="map-field-label">State</div>
                 <span class="map-state-badge" id="map-panel-state"></span>
               </div>
               <div>
-                <div class="map-field-label">Hip&oacute;tesis</div>
+                <div class="map-field-label">Hypothesis</div>
                 <div class="map-field-value" id="map-panel-text"></div>
               </div>
               <div id="map-panel-evidence-sect" class="hidden">
-                <div class="map-field-label">Evidencia de soporte</div>
+                <div class="map-field-label">Supporting evidence</div>
                 <div class="map-evidence-list" id="map-panel-evidence"></div>
               </div>
               <hr class="map-divider">
               <div class="map-panel-grid">
                 <div>
-                  <div class="map-field-label">Propuesto por</div>
+                  <div class="map-field-label">Proposed by</div>
                   <div class="map-field-value mono" id="map-panel-proposer"></div>
                 </div>
                 <div>
-                  <div class="map-field-label">Ronda</div>
+                  <div class="map-field-label">Round</div>
                   <div class="map-field-value" id="map-panel-round"></div>
                 </div>
               </div>
               <div id="map-panel-rejection-sect" class="hidden">
                 <div class="map-rejection-box">
-                  <strong>Motivo de rechazo</strong>
+                  <strong>Rejection reason</strong>
                   <span id="map-panel-rejection"></span>
                 </div>
               </div>
               <div id="map-panel-transitions-sect" class="hidden">
-                <div class="map-field-label">Historial de transiciones</div>
+                <div class="map-field-label">Transition history</div>
                 <div class="map-evidence-list" id="map-panel-transitions"></div>
               </div>
             </div>

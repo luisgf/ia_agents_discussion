@@ -177,12 +177,12 @@ MODERATOR_JSON_SCHEMA = (
 
 
 def _labels(language: str) -> dict:
-    return _L.get(language) or _L["es"]
+    return _L.get(language) or _L["en"]
 
 
 def format_history(
     history: list[object],
-    language: str = "es",
+    language: str = "en",
     history_summary: str = "",
     mode: str = "full",
 ) -> str:
@@ -203,7 +203,7 @@ def format_history(
     return "\n\n".join(f"[{item.role}]\n{item.content}" for item in history)
 
 
-def _format_hypotheses(hypotheses: list[object], language: str = "es") -> str:
+def _format_hypotheses(hypotheses: list[object], language: str = "en") -> str:
     if not hypotheses:
         return "- Ninguna."
     lines = []
@@ -226,7 +226,7 @@ def diagnostic_prompt(
     round_number: int,
     history: list[object],
     hypotheses: list[object] | None = None,
-    language: str = "es",
+    language: str = "en",
     history_summary: str = "",
     mode: str = "full",
 ) -> str:
@@ -256,7 +256,7 @@ def skeptic_prompt(
     diagnostic_response: str,
     hypotheses: list[object],
     history: list[object],
-    language: str = "es",
+    language: str = "en",
     history_summary: str = "",
     mode: str = "full",
 ) -> str:
@@ -288,7 +288,7 @@ def rebuttal_prompt(
     skeptic_response: str,
     hypotheses: list[object],
     history: list[object] | None = None,
-    language: str = "es",
+    language: str = "en",
     history_summary: str = "",
     mode: str = "full",
 ) -> str:
@@ -329,7 +329,7 @@ def moderator_prompt(
     hypotheses: list[object],
     history: list[object] | None = None,
     history_summary: str = "",
-    language: str = "es",
+    language: str = "en",
     mode: str = "full",
 ) -> str:
     t = _labels(language)
@@ -368,7 +368,7 @@ def moderator_prompt(
 """.strip()
 
 
-def moderator_json_fallback_suffix(language: str = "es") -> str:
+def moderator_json_fallback_suffix(language: str = "en") -> str:
     """Appended to the moderator prompt only when the model/endpoint
     does not support structured output natively. Since the base prompt
     already includes the JSON schema, this suffix is now a thin reminder."""

@@ -19,27 +19,27 @@ const AGENT_CFG = {
 };
 
 const NEXT_LABEL = {
-  diagnostic_agent:          'Revisor Escéptico',
-  skeptic_agent:             'Contrarréplica',
-  diagnostic_rebuttal_agent: 'Moderador',
+  diagnostic_agent:          'Skeptical Reviewer',
+  skeptic_agent:             'Rebuttal',
+  diagnostic_rebuttal_agent: 'Moderator',
 };
 
 const STATUS_CFG = {
-  continue:               { lbl: 'Continuar',     cls: 'db-continue' },
-  final_diagnosis:        { lbl: 'Diagnóstico',   cls: 'db-final_diagnosis' },
-  needs_more_data:        { lbl: 'Faltan datos',  cls: 'db-needs_more_data' },
-  propose_fix:            { lbl: 'Fix listo',     cls: 'db-propose_fix' },
-  structured_uncertainty: { lbl: 'Incertidumbre', cls: 'db-structured_uncertainty' },
+  continue:               { lbl: 'Continue',      cls: 'db-continue' },
+  final_diagnosis:        { lbl: 'Diagnosis',     cls: 'db-final_diagnosis' },
+  needs_more_data:        { lbl: 'Missing data',  cls: 'db-needs_more_data' },
+  propose_fix:            { lbl: 'Fix ready',     cls: 'db-propose_fix' },
+  structured_uncertainty: { lbl: 'Uncertainty',   cls: 'db-structured_uncertainty' },
 };
 
 const RISK_CLS = { critical:'rc', high:'rh', medium:'rm', low:'rl' };
 
 const APPROVAL_LBL = {
   auto:     ['ap-auto',     'auto'],
-  approved: ['ap-approved', 'aprobada'],
-  rejected: ['ap-rejected', 'rechazada'],
+  approved: ['ap-approved', 'approved'],
+  rejected: ['ap-rejected', 'rejected'],
   timeout:  ['ap-timeout',  'timeout'],
-  cached:   ['ap-cached',   'caché'],
+  cached:   ['ap-cached',   'cached'],
 };
 
 // ── State ──────────────────────────────────────────────────────────────
@@ -95,13 +95,13 @@ function initMobileSidebar() {
     mobileOverlay.classList.remove('open');
   });
 
-  // Auto-cerrar al iniciar un debate
+  // Auto-close when starting a debate
   form.addEventListener('submit', () => {
     sidebar.classList.remove('open');
     mobileOverlay.classList.remove('open');
   });
 
-  // Cerrar al hacer clic en un tab de la conversación
+  // Close when clicking a conversation tab
   tabDebate.addEventListener('click', () => {
     sidebar.classList.remove('open');
     mobileOverlay.classList.remove('open');
@@ -139,7 +139,7 @@ function setStatus(state, text) {
 }
 
 function showTyping(label) {
-  typingLbl.textContent = label + ' analizando...';
+  typingLbl.textContent = label + ' analyzing...';
   typing.classList.remove('hidden');
   scrollBottom();
 }
@@ -186,7 +186,7 @@ function clearThread() {
 function addRoundSep(round, total) {
   const d = document.createElement('div');
   d.className = 'round-sep';
-  d.innerHTML = '<span>Ronda ' + round + ' <em>de ' + total + '</em></span>';
+  d.innerHTML = '<span>Round ' + round + ' <em>of ' + total + '</em></span>';
   thread.insertBefore(d, typing);
 }
 
@@ -289,7 +289,7 @@ function buildAgentCard(event) {
       '<div class="agent-id">' +
         '<div class="agent-ico">' + cfg.ico + '</div>' +
         '<div><span class="agent-nm">' + esc(event.role) + '</span>' +
-             '<span class="agent-sub">Ronda ' + curRound + '</span></div>' +
+             '<span class="agent-sub">Round ' + curRound + '</span></div>' +
       '</div>' +
       CHEVRON +
     '</div>' +
@@ -307,7 +307,7 @@ function buildReasoningCard(event) {
       '<div class="agent-id">' +
         '<div class="agent-ico">' + cfg.ico + '</div>' +
         '<div><span class="agent-nm">' + esc(event.agent_role) + '</span>' +
-             '<span class="agent-sub agent-sub--reasoning">Razonamiento</span></div>' +
+             '<span class="agent-sub agent-sub--reasoning">Reasoning</span></div>' +
       '</div>' +
       CHEVRON +
     '</div>' +
@@ -320,7 +320,7 @@ function buildReasoningCard(event) {
 // Created on agent_turn_started, fed token deltas by agent_delta, and frozen
 // in place by the turn's closing event (agent_reasoning / agent_completed).
 function ensureLiveAgent(node, role) {
-  // Reutilizar tarjeta del mismo nodo (reactivar si está congelada por reasoning)
+  // Reuse the same node's card (reactivate if frozen by reasoning)
   if (liveAgent && liveAgent.node === node) {
     if (!liveAgent.el.classList.contains('acard--streaming')) {
       // Reactivating from a frozen (reasoning) state: start a fresh streaming
@@ -330,7 +330,7 @@ function ensureLiveAgent(node, role) {
       const sub = liveAgent.el.querySelector('.agent-sub');
       sub.classList.remove('agent-sub--reasoning');
       sub.classList.add('agent-sub--live');
-      sub.textContent = 'Razonando en tiempo real…';
+      sub.textContent = 'Reasoning in real time…';
       liveAgent.buffer = '';
       if (liveAgent.timer) { clearTimeout(liveAgent.timer); liveAgent.timer = null; }
     }
@@ -345,7 +345,7 @@ function ensureLiveAgent(node, role) {
       '<div class="agent-id">' +
         '<div class="agent-ico">' + cfg.ico + '</div>' +
         '<div><span class="agent-nm">' + esc(role) + '</span>' +
-             '<span class="agent-sub agent-sub--live">Razonando en tiempo real…</span></div>' +
+             '<span class="agent-sub agent-sub--live">Reasoning in real time…</span></div>' +
       '</div>' +
       CHEVRON +
     '</div>' +
@@ -377,11 +377,11 @@ function appendLiveDelta(ev) {
 function finalizeLiveAgent(content, kind, subtitle) {
   if (!liveAgent) return false;
   const live = liveAgent;
-  // Liberar referencia SOLO si el freeze es definitivo ('final')
-  // o si es llamado sin kind (cambio de agente en ensureLiveAgent).
-  // Cuando kind === 'reasoning', dejamos liveAgent activo para que
-  // ensureLiveAgent pueda reutilizar la tarjeta en la siguiente
-  // iteración LLM dentro del mismo ciclo ReAct.
+  // Release the reference ONLY if the freeze is definitive ('final')
+  // or if called without kind (agent change in ensureLiveAgent).
+  // When kind === 'reasoning', we keep liveAgent active so that
+  // ensureLiveAgent can reuse the card in the next LLM iteration
+  // within the same ReAct loop.
   if (!kind || kind === 'final') {
     liveAgent = null;
   }
@@ -389,19 +389,19 @@ function finalizeLiveAgent(content, kind, subtitle) {
   const text = content != null ? content : live.buffer;
   if (!String(text).trim()) {
     if (live.frozenHTML) {
-      // Nada nuevo que mostrar, pero hay razonamiento congelado de iteraciones
-      // anteriores: conservar la tarjeta en vez de borrarla del DOM.
+      // Nothing new to show, but there is frozen reasoning from earlier
+      // iterations: keep the card instead of removing it from the DOM.
       live.el.classList.remove('acard--streaming');
       live.el.classList.add('acard--reasoning');
       const sub = live.el.querySelector('.agent-sub');
       sub.classList.remove('agent-sub--live');
       sub.classList.add('agent-sub--reasoning');
-      sub.textContent = 'Razonamiento';
+      sub.textContent = 'Reasoning';
       return true;
     }
     live.el.remove();
-    // Cierre 'final' sin contenido ni razonamiento: devolver false para que el
-    // caller cree la tarjeta estática (buildAgentCard) con el evento original.
+    // 'final' close with no content or reasoning: return false so the
+    // caller builds the static card (buildAgentCard) from the original event.
     return kind !== 'final';
   }
   live.el.classList.remove('acard--streaming');
@@ -416,9 +416,9 @@ function finalizeLiveAgent(content, kind, subtitle) {
   sub.classList.remove('agent-sub--live');
   if (kind === 'reasoning') {
     sub.classList.add('agent-sub--reasoning');
-    sub.textContent = 'Razonamiento';
+    sub.textContent = 'Reasoning';
   } else {
-    sub.textContent = subtitle || ('Ronda ' + curRound);
+    sub.textContent = subtitle || ('Round ' + curRound);
   }
   scrollBottom();
   return true;
@@ -431,8 +431,8 @@ function buildUserCard(content) {
     '<div class="acard-head">' +
       '<div class="agent-id">' +
         '<div class="agent-ico">' + ICO.user + '</div>' +
-        '<div><span class="agent-nm">Operador</span>' +
-             '<span class="agent-sub">Comentario entre rondas</span></div>' +
+        '<div><span class="agent-nm">Operator</span>' +
+             '<span class="agent-sub">Comment between rounds</span></div>' +
       '</div>' +
       CHEVRON +
     '</div>' +
@@ -454,12 +454,12 @@ function buildModCard(decision, round) {
   let body = '';
 
   if (decision.leading_hypothesis) {
-    body += '<div><div class="msect-title">Hipótesis principal</div>' +
+    body += '<div><div class="msect-title">Leading hypothesis</div>' +
             '<div class="msect-body">' + esc(decision.leading_hypothesis) + '</div></div>';
   }
 
   if (decision.next_step) {
-    body += '<div><div class="msect-title">Siguiente paso</div>' +
+    body += '<div><div class="msect-title">Next step</div>' +
             '<div class="msect-body">' + esc(decision.next_step) + '</div></div>';
   }
 
@@ -467,18 +467,18 @@ function buildModCard(decision, round) {
   if (evRow) {
     body += '<div class="mod-row2">';
     if (decision.evidence && decision.evidence.length) {
-      body += '<div><div class="msect-title">Evidencias (' + decision.evidence.length + ')</div>' +
+      body += '<div><div class="msect-title">Evidence (' + decision.evidence.length + ')</div>' +
               rlist(decision.evidence) + '</div>';
     }
     if (decision.missing_evidence && decision.missing_evidence.length) {
-      body += '<div><div class="msect-title">Evidencia faltante</div>' +
+      body += '<div><div class="msect-title">Missing evidence</div>' +
               rlist(decision.missing_evidence) + '</div>';
     }
     body += '</div>';
   }
 
   if (decision.recommended_fix) {
-    body += '<div class="fix-box"><div class="msect-title">Fix recomendado</div>' +
+    body += '<div class="fix-box"><div class="msect-title">Recommended fix</div>' +
             '<div class="msect-body">' + esc(decision.recommended_fix) + '</div></div>';
   }
 
@@ -486,18 +486,18 @@ function buildModCard(decision, round) {
   if (rejRow) {
     body += '<div class="mod-row2">';
     if (decision.rejected_hypotheses && decision.rejected_hypotheses.length) {
-      body += '<div><div class="msect-title">Hipótesis rechazadas</div>' +
+      body += '<div><div class="msect-title">Rejected hypotheses</div>' +
               rlist(decision.rejected_hypotheses) + '</div>';
     }
     if (decision.validation && decision.validation.length) {
-      body += '<div><div class="msect-title">Pasos de validación</div>' +
+      body += '<div><div class="msect-title">Validation steps</div>' +
               rlist(decision.validation) + '</div>';
     }
     body += '</div>';
   }
 
   if (decision.stop_reason) {
-    body += '<div><div class="msect-title">Motivo de cierre</div>' +
+    body += '<div><div class="msect-title">Stop reason</div>' +
             '<div class="msect-body it">' + esc(decision.stop_reason) + '</div></div>';
   }
 
@@ -505,8 +505,8 @@ function buildModCard(decision, round) {
     '<div class="acard-head">' +
       '<div class="agent-id">' +
         '<div class="agent-ico">' + ICO.mod + '</div>' +
-        '<div><span class="agent-nm">Moderador</span>' +
-             '<span class="agent-sub">Ronda ' + round + ' · Decisión</span></div>' +
+        '<div><span class="agent-nm">Moderator</span>' +
+             '<span class="agent-sub">Round ' + round + ' · Decision</span></div>' +
       '</div>' +
       '<div style="display:flex;align-items:center;gap:7px">' +
         '<span class="rbadge ' + rk + '">' + esc(decision.risk_level || '?') + '</span>' +
@@ -515,7 +515,7 @@ function buildModCard(decision, round) {
       '</div>' +
     '</div>' +
     '<div class="conf-row">' +
-      '<span class="conf-lbl">Confianza</span>' +
+      '<span class="conf-lbl">Confidence</span>' +
       '<div class="conf-track"><div class="conf-fill" style="width:' + pct + '%;background:' + barColor + '"></div></div>' +
       '<span class="conf-val">' + pct + '%</span>' +
     '</div>' +
@@ -534,7 +534,7 @@ function buildFinalCard(decision) {
   let extra = '';
   if (decision.recommended_fix) {
     extra = '<div class="mod-body" style="border-top:1px solid var(--border)">' +
-            '<div><div class="msect-title">Fix recomendado</div>' +
+            '<div><div class="msect-title">Recommended fix</div>' +
             '<div class="msect-body">' + esc(decision.recommended_fix) + '</div></div>' +
             '</div>';
   }
@@ -545,15 +545,15 @@ function buildFinalCard(decision) {
     '<div class="acard-head">' +
       '<div class="agent-id">' +
         '<div class="agent-ico">' + ICO.final + '</div>' +
-        '<div><span class="agent-nm">Diagnóstico completo</span>' +
-             '<span class="agent-sub">Debate cerrado · ' + rnds + ' ronda' + (rnds > 1 ? 's' : '') + '</span></div>' +
+        '<div><span class="agent-nm">Complete diagnosis</span>' +
+             '<span class="agent-sub">Debate closed · ' + rnds + ' round' + (rnds > 1 ? 's' : '') + '</span></div>' +
       '</div>' +
       '<span class="dbadge ' + st.cls + '">' + st.lbl + '</span>' +
     '</div>' +
     '<div class="final-stats">' +
-      '<div class="fstat"><span class="fstat-lbl">Confianza</span><span class="fstat-val">' + pct + '%</span></div>' +
-      '<div class="fstat"><span class="fstat-lbl">Rondas</span><span class="fstat-val">' + rnds + '</span></div>' +
-      '<div class="fstat"><span class="fstat-lbl">Riesgo</span><span class="fstat-val"><span class="rbadge ' + rk + '">' + esc(decision.risk_level || '?') + '</span></span></div>' +
+      '<div class="fstat"><span class="fstat-lbl">Confidence</span><span class="fstat-val">' + pct + '%</span></div>' +
+      '<div class="fstat"><span class="fstat-lbl">Rounds</span><span class="fstat-val">' + rnds + '</span></div>' +
+      '<div class="fstat"><span class="fstat-lbl">Risk</span><span class="fstat-val"><span class="rbadge ' + rk + '">' + esc(decision.risk_level || '?') + '</span></span></div>' +
     '</div>' +
     extra;
 
@@ -567,7 +567,7 @@ function buildErrCard(msg) {
     '<div class="acard-head">' +
       '<div class="agent-id">' +
         '<div class="agent-ico">' + ICO.err + '</div>' +
-        '<div><span class="agent-nm">Error</span><span class="agent-sub">Fallo durante el debate</span></div>' +
+        '<div><span class="agent-nm">Error</span><span class="agent-sub">Failure during the debate</span></div>' +
       '</div>' +
     '</div>' +
     '<div class="card-body">' + esc(msg) + '</div>';
@@ -589,11 +589,11 @@ function buildInfoCard(title, msg) {
 }
 
 const ROLE_LABELS = {
-  diagnostic_agent:         'Diagnóstico',
-  skeptic_agent:            'Escéptico',
-  diagnostic_rebuttal_agent: 'Contrarréplica',
-  moderator_agent:          'Moderador',
-  summarize_history:        'Resumen',
+  diagnostic_agent:         'Diagnosis',
+  skeptic_agent:            'Skeptic',
+  diagnostic_rebuttal_agent: 'Rebuttal',
+  moderator_agent:          'Moderator',
+  summarize_history:        'Summary',
 };
 
 function fmtTokens(n) {
@@ -627,10 +627,10 @@ function buildTokenStatsCard(tokenTotals, costEstimate) {
   const el = document.createElement('div');
   el.className = 'token-stats-card';
   el.innerHTML =
-    '<div class="token-stats-head">&#128200; Consumo de tokens</div>' +
+    '<div class="token-stats-head">&#128200; Token consumption</div>' +
     '<table class="token-stats-table">' +
       '<thead><tr>' +
-        '<th>Agente</th><th>Entrada</th><th>Salida</th><th>Total</th><th>Coste est.</th>' +
+        '<th>Agent</th><th>Input</th><th>Output</th><th>Total</th><th>Est. cost</th>' +
       '</tr></thead>' +
       '<tbody>' + rows + '</tbody>' +
       '<tfoot><tr class="token-stats-total">' +
@@ -642,7 +642,7 @@ function buildTokenStatsCard(tokenTotals, costEstimate) {
       '</tr></tfoot>' +
     '</table>' +
     ((costEstimate && !costEstimate.has_prices)
-      ? '<div class="token-stats-cost">Precio no disponible para uno o más modelos. Configura <code>MODEL_PRICES_FILE</code> para estimaciones precisas.</div>'
+      ? '<div class="token-stats-cost">Price unavailable for one or more models. Configure <code>MODEL_PRICES_FILE</code> for accurate estimates.</div>'
       : '');
   return el;
 }
@@ -671,9 +671,9 @@ function buildToolCallCard(ev) {
       '<span class="tc-arrow">&#9654;</span>' +
     '</div>' +
     '<div class="tc-body">' +
-      '<div class="tc-section-lbl">Argumentos</div>' +
+      '<div class="tc-section-lbl">Arguments</div>' +
       '<pre class="tc-pre">' + esc(argsStr) + '</pre>' +
-      '<div class="tc-section-lbl" style="margin-top:8px">Resultado' + (isErr ? ' (error)' : '') + '</div>' +
+      '<div class="tc-section-lbl" style="margin-top:8px">Result' + (isErr ? ' (error)' : '') + '</div>' +
       '<pre class="tc-pre">' + esc(resultStr) + '</pre>' +
     '</div>';
 
@@ -693,12 +693,12 @@ function buildRunningToolCard(ev) {
     '<div class="tc-head">' +
       '<span class="tc-spin"></span>' +
       '<span class="tc-name">' + esc(ev.tool_name) + '</span>' +
-      '<span class="tc-status">ejecutando&hellip;</span>' +
+      '<span class="tc-status">running&hellip;</span>' +
       '<span class="tc-agent">' + esc(ev.agent_role || ev.agent_node) + '</span>' +
       '<span class="tc-arrow">&#9654;</span>' +
     '</div>' +
     '<div class="tc-body">' +
-      '<div class="tc-section-lbl">Argumentos</div>' +
+      '<div class="tc-section-lbl">Arguments</div>' +
       '<pre class="tc-pre">' + esc(JSON.stringify(ev.args || {}, null, 2)) + '</pre>' +
     '</div>';
   card.querySelector('.tc-head').addEventListener('click', () => card.classList.toggle('open'));
@@ -728,10 +728,10 @@ function ensureToolGroup(ev) {
   group.el.innerHTML =
     '<div class="tc-group-head">' +
       '<span class="tc-group-ico">' + TOOL_ICO + '</span>' +
-      '<span class="tc-group-title">Herramientas</span>' +
-      '<span class="tc-group-count">0 llamadas</span>' +
-      '<span class="tc-group-errors hidden">0 errores</span>' +
-      '<span class="tc-group-running hidden">ejecutando&hellip;</span>' +
+      '<span class="tc-group-title">Tools</span>' +
+      '<span class="tc-group-count">0 calls</span>' +
+      '<span class="tc-group-errors hidden">0 errors</span>' +
+      '<span class="tc-group-running hidden">running&hellip;</span>' +
       '<span class="tc-group-agent"></span>' +
       '<span class="tc-group-arrow">&#9654;</span>' +
     '</div>' +
@@ -755,13 +755,13 @@ function updateToolGroup(group, ev) {
   const agent = ev && (ev.agent_role || ev.agent_node);
   if (agent) group.agents.add(agent);
 
-  const label = group.count === 1 ? '1 llamada' : group.count + ' llamadas';
+  const label = group.count === 1 ? '1 call' : group.count + ' calls';
   group.countEl.textContent = label;
 
   if (group.errors > 0) {
     group.el.classList.add('has-errors');
     group.errEl.classList.remove('hidden');
-    group.errEl.textContent = group.errors === 1 ? '1 error' : group.errors + ' errores';
+    group.errEl.textContent = group.errors === 1 ? '1 error' : group.errors + ' errors';
   } else {
     group.el.classList.remove('has-errors');
     group.errEl.classList.add('hidden');
@@ -776,7 +776,7 @@ function updateToolGroup(group, ev) {
   if (group.agents.size === 1) {
     group.agentEl.textContent = Array.from(group.agents)[0];
   } else if (group.agents.size > 1) {
-    group.agentEl.textContent = 'Varios agentes';
+    group.agentEl.textContent = 'Several agents';
   } else {
     group.agentEl.textContent = '';
   }
@@ -793,15 +793,15 @@ function buildApprovalCard(ev) {
   card.className = 'appr-card';
   card.innerHTML =
     '<div class="appr-head">' +
-      '<span class="appr-name">&#9888; Aprobación requerida: ' + esc(ev.tool_name) + '</span>' +
+      '<span class="appr-name">&#9888; Approval required: ' + esc(ev.tool_name) + '</span>' +
       '<span class="appr-agent">' + esc(ev.agent_role || '') + '</span>' +
     '</div>' +
     '<div class="appr-body"><pre class="tc-pre">' +
       esc(JSON.stringify(ev.args || {}, null, 2)) +
     '</pre></div>' +
     '<div class="appr-actions">' +
-      '<button class="btn-sm btn-approve" type="button">Aprobar</button>' +
-      '<button class="btn-sm btn-reject" type="button">Rechazar</button>' +
+      '<button class="btn-sm btn-approve" type="button">Approve</button>' +
+      '<button class="btn-sm btn-reject" type="button">Reject</button>' +
     '</div>' +
     '<div class="appr-status hidden"></div>';
 
@@ -838,12 +838,12 @@ function markApprovalResolved(ev) {
   st.classList.remove('hidden');
   if (ev.approved) {
     st.classList.add('ok');
-    st.textContent = '✓ Aprobada por el operador — ejecutando...';
+    st.textContent = '✓ Approved by the operator — running...';
   } else {
     st.classList.add('no');
     st.textContent = ev.resolution === 'timeout'
-      ? '✕ Sin respuesta (timeout) — no ejecutada'
-      : '✕ Rechazada por el operador — no ejecutada';
+      ? '✕ No response (timeout) — not executed'
+      : '✕ Rejected by the operator — not executed';
   }
 }
 
@@ -853,11 +853,11 @@ function showHitlBanner(round) {
   const div = document.createElement('div');
   div.className = 'hitl-banner';
   div.innerHTML =
-    '<div class="hitl-title">El debate está en pausa: añade contexto antes de la ronda ' + esc(String(round)) + '</div>' +
-    '<textarea placeholder="Comentario, dato nuevo o instrucción para los agentes (opcional)..."></textarea>' +
+    '<div class="hitl-title">The debate is paused: add context before round ' + esc(String(round)) + '</div>' +
+    '<textarea placeholder="Comment, new data, or instruction for the agents (optional)..."></textarea>' +
     '<div class="hitl-actions">' +
-      '<button class="btn-sm btn-open" type="button" data-act="send">Enviar comentario</button>' +
-      '<button class="btn-sm btn-del" type="button" data-act="skip">Continuar sin comentario</button>' +
+      '<button class="btn-sm btn-open" type="button" data-act="send">Send comment</button>' +
+      '<button class="btn-sm btn-del" type="button" data-act="skip">Continue without comment</button>' +
     '</div>';
   div.querySelector('[data-act="send"]').addEventListener('click', () => submitComment(div.querySelector('textarea').value, div));
   div.querySelector('[data-act="skip"]').addEventListener('click', () => submitComment('', div));
@@ -913,7 +913,7 @@ function renderEvent(ev) {
     const group = (ev.call_id && toolCardGroups[ev.call_id]) || ensureToolGroup(ev);
     const card = buildToolCallCard(ev);
     if (running) {
-      // Update the "ejecutando…" card in place, keeping its expanded state.
+      // Update the "running…" card in place, keeping its expanded state.
       if (running.classList.contains('open')) card.classList.add('open');
       running.replaceWith(card);
       group.running = Math.max(0, group.running - 1);
@@ -947,13 +947,13 @@ function renderEvent(ev) {
 
   if (ev.type === 'tool_approval_request') {
     push(buildApprovalCard(ev));
-    if (isLive) setStatus('waiting', 'Esperando aprobación');
+    if (isLive) setStatus('waiting', 'Waiting for approval');
     return;
   }
 
   if (ev.type === 'tool_approval_resolved') {
     markApprovalResolved(ev);
-    if (isLive) setStatus('running', 'Ronda ' + curRound + ' de ' + maxRounds);
+    if (isLive) setStatus('running', 'Round ' + curRound + ' of ' + maxRounds);
     return;
   }
 
@@ -961,7 +961,7 @@ function renderEvent(ev) {
     if (isLive) {
       hideTyping();
       showHitlBanner(ev.round);
-      setStatus('waiting', 'Esperando comentario');
+      setStatus('waiting', 'Waiting for comment');
     }
     return;
   }
@@ -970,8 +970,8 @@ function renderEvent(ev) {
     removeHitlBanner();
     if (ev.content) push(buildUserCard(ev.content));
     if (isLive) {
-      setStatus('running', 'Ronda ' + curRound + ' de ' + maxRounds);
-      showTyping('Diagnóstico Principal');
+      setStatus('running', 'Round ' + curRound + ' of ' + maxRounds);
+      showTyping('Primary Diagnosis');
     }
     return;
   }
@@ -979,7 +979,7 @@ function renderEvent(ev) {
   if (ev.type === 'run_resumed') {
     const banner = document.createElement('div');
     banner.className = 'resumed-banner';
-    banner.innerHTML = '&#8635; Debate reanudado con nueva evidencia' +
+    banner.innerHTML = '&#8635; Debate resumed with new evidence' +
       (ev.parent_topic ? ' &nbsp;&middot;&nbsp; <strong>' + esc(ev.parent_topic) + '</strong>' : '');
     thread.insertBefore(banner, typing);
     return;
@@ -987,9 +987,9 @@ function renderEvent(ev) {
 
   if (ev.type === 'reasoning_effort_ignored') {
     push(buildInfoCard(
-      'Nivel de thinking ignorado',
-      'El modelo «' + (ev.model || '?') + '» del agente ' + (ev.agent_role || '?') +
-      ' no admite nivel de thinking; se ignoró el valor «' + (ev.requested_effort || '?') + '».'
+      'Thinking level ignored',
+      'The model "' + (ev.model || '?') + '" of the ' + (ev.agent_role || '?') +
+      ' agent does not support a thinking level; the value "' + (ev.requested_effort || '?') + '" was ignored.'
     ));
     return;
   }
@@ -1001,8 +1001,8 @@ function renderEvent(ev) {
     const card = document.createElement('div');
     card.className = 'info-card';
     card.innerHTML =
-      '<div class="info-title">&#9888; ' + esc(ev.agent_role || ev.agent_node) + ' omitido</div>' +
-      '<p class="info-body">' + esc(ev.rationale || 'Decisión del moderador') + '</p>';
+      '<div class="info-title">&#9888; ' + esc(ev.agent_role || ev.agent_node) + ' skipped</div>' +
+      '<p class="info-body">' + esc(ev.rationale || 'Moderator decision') + '</p>';
     push(card);
     return;
   }
@@ -1011,8 +1011,8 @@ function renderEvent(ev) {
     const card = document.createElement('div');
     card.className = 'info-card';
     card.innerHTML =
-      '<div class="info-title">&#128209; Historial comprimido (ronda ' + esc(String(ev.round)) + ')</div>' +
-      '<p class="info-body">Las rondas anteriores se resumen para reducir tokens.</p>';
+      '<div class="info-title">&#128209; History compressed (round ' + esc(String(ev.round)) + ')</div>' +
+      '<p class="info-body">Earlier rounds are summarized to reduce tokens.</p>';
     push(card);
     return;
   }
@@ -1023,24 +1023,24 @@ function renderEvent(ev) {
     maxRounds = ev.max_rounds;
     curRound  = 1;
     HypoMap.setTopic(ev.topic);
-    if (isLive) setStatus('running', 'Ronda 1 de ' + maxRounds);
+    if (isLive) setStatus('running', 'Round 1 of ' + maxRounds);
 
     const hdr = document.createElement('div');
     hdr.className = 'run-header';
     hdr.innerHTML =
-      '<div class="run-header-label">Diagnóstico' + (isLive ? ' en curso' : '') + '</div>' +
+      '<div class="run-header-label">Diagnosis' + (isLive ? ' in progress' : '') + '</div>' +
       '<div class="run-header-topic">' + esc(ev.topic) + '</div>' +
-      '<div class="run-header-meta">Máximo ' + ev.max_rounds + ' rondas &middot; Confianza requerida: ' +
+      '<div class="run-header-meta">Maximum ' + ev.max_rounds + ' rounds &middot; Required confidence: ' +
         Math.round(ev.confidence_threshold * 100) + '%' +
-        (ev.template && ev.template !== 'default' ? ' &middot; Plantilla: ' + esc(ev.template) : '') +
+        (ev.template && ev.template !== 'default' ? ' &middot; Template: ' + esc(ev.template) : '') +
       '</div>';
     thread.insertBefore(hdr, typing);
 
     addRoundSep(1, maxRounds);
-    if (isLive) showTyping('Diagnóstico Principal');
+    if (isLive) showTyping('Primary Diagnosis');
 
   } else if (ev.type === 'agent_completed') {
-    if (!finalizeLiveAgent(ev.content, 'final', 'Ronda ' + curRound)) push(buildAgentCard(ev));
+    if (!finalizeLiveAgent(ev.content, 'final', 'Round ' + curRound)) push(buildAgentCard(ev));
     const next = NEXT_LABEL[ev.node];
     if (next && isLive) showTyping(next);
 
@@ -1053,8 +1053,8 @@ function renderEvent(ev) {
       curRound = ev.round || (curRound + 1);
       addRoundSep(curRound, maxRounds);
       if (isLive) {
-        setStatus('running', 'Ronda ' + curRound + ' de ' + maxRounds);
-        showTyping('Diagnóstico Principal');
+        setStatus('running', 'Round ' + curRound + ' of ' + maxRounds);
+        showTyping('Primary Diagnosis');
       }
     }
 
@@ -1065,15 +1065,15 @@ function renderEvent(ev) {
     const statsCard = buildTokenStatsCard(ev.token_totals, ev.cost_estimate);
     if (statsCard) push(statsCard);
     if (isLive) {
-      setStatus('done', 'Finalizado');
+      setStatus('done', 'Finished');
       finishLiveView();
     }
     showPostRunActions();
 
   } else if (ev.type === 'run_cancelled') {
-    push(buildInfoCard('Debate detenido', 'El debate fue interrumpido manualmente.'));
+    push(buildInfoCard('Debate stopped', 'The debate was interrupted manually.'));
     if (isLive) {
-      setStatus('idle', 'Detenido');
+      setStatus('idle', 'Stopped');
       finishLiveView();
     }
     showPostRunActions();
@@ -1109,8 +1109,8 @@ function watchRun(runId) {
   source.onerror = () => {
     if (!isLive) return;
     hideTyping();
-    push(buildErrCard('Se perdió la conexión con el servidor. El debate sigue en el servidor: ábrelo desde el historial.'));
-    setStatus('error', 'Error de conexión');
+    push(buildErrCard('Connection to the server was lost. The debate is still running on the server: open it from the history.'));
+    setStatus('error', 'Connection error');
     finishLiveView();
   };
 }
@@ -1127,7 +1127,7 @@ form.addEventListener('submit', async ev => {
   curRound = 1;
   viewRunId = null;
 
-  setStatus('preparing', 'Preparando...');
+  setStatus('preparing', 'Preparing...');
   btn.disabled = true;
   showStop();
 
@@ -1139,12 +1139,12 @@ form.addEventListener('submit', async ev => {
     const res     = await fetch('/api/runs', { method: 'POST', body: fd });
     const payload = await res.json();
     if (!res.ok) {
-      const msg = payload.detail || payload.message || 'No se pudo iniciar el diagnóstico';
+      const msg = payload.detail || payload.message || 'The diagnosis could not be started';
       // Detect auth-related errors and prompt user to renew token
       if (/token.*expired|unauthorized|invalid.*token|401|403/i.test(msg)) {
         throw new Error(
-          'Token de GitHub expirado o no válido. ' +
-          'Pulsa el botón 🔑 Auth en la barra lateral para renovarlo.'
+          'GitHub token expired or invalid. ' +
+          'Click the 🔑 Auth button in the sidebar to renew it.'
         );
       }
       throw new Error(msg);
@@ -1182,7 +1182,7 @@ document.getElementById('resume-submit').addEventListener('click', async () => {
   const evidence = document.getElementById('resume-evidence').value.trim();
   const files    = document.getElementById('resume-files').files;
   if (!evidence && !files.length) {
-    alert('Aporta nueva evidencia (texto o archivos) para reanudar el debate.');
+    alert('Provide new evidence (text or files) to resume the debate.');
     return;
   }
   const fd = new FormData();
@@ -1195,7 +1195,7 @@ document.getElementById('resume-submit').addEventListener('click', async () => {
   try {
     const res = await fetch('/api/runs/' + parentId + '/resume', { method: 'POST', body: fd });
     const payload = await res.json();
-    if (!res.ok) throw new Error(payload.detail || 'No se pudo reanudar el debate');
+    if (!res.ok) throw new Error(payload.detail || 'The debate could not be resumed');
 
     hideResumePanel();
     showDebateTab();
@@ -1203,7 +1203,7 @@ document.getElementById('resume-submit').addEventListener('click', async () => {
     emptyState.classList.add('hidden');
     lastDecision = null;
     curRound = 1;
-    setStatus('preparing', 'Reanudando...');
+    setStatus('preparing', 'Resuming...');
     btn.disabled = true;
     showStop();
     watchRun(payload.run_id);
@@ -1214,22 +1214,22 @@ document.getElementById('resume-submit').addEventListener('click', async () => {
 
 // ── History ────────────────────────────────────────────────────────────
 async function loadHistory() {
-  histPanel.innerHTML = '<p class="hist-empty">Cargando historial...</p>';
+  histPanel.innerHTML = '<p class="hist-empty">Loading history...</p>';
   try {
     const res  = await fetch('/api/runs');
     const data = await res.json();
     renderHistoryList(data.runs || []);
   } catch {
-    histPanel.innerHTML = '<p class="hist-empty">Error al cargar el historial.</p>';
+    histPanel.innerHTML = '<p class="hist-empty">Error loading the history.</p>';
   }
 }
 
 const RS_CFG = {
-  running:     ['rs-running',     'En curso'],
-  completed:   ['rs-completed',   'Completado'],
-  cancelled:   ['rs-cancelled',   'Detenido'],
+  running:     ['rs-running',     'In progress'],
+  completed:   ['rs-completed',   'Completed'],
+  cancelled:   ['rs-cancelled',   'Stopped'],
   error:       ['rs-error',       'Error'],
-  interrupted: ['rs-interrupted', 'Interrumpido'],
+  interrupted: ['rs-interrupted', 'Interrupted'],
 };
 
 function statusBadge(status) {
@@ -1249,25 +1249,25 @@ function fmtRunDuration(secs) {
 
 function fmtTs(iso) {
   if (!iso) return '—';
-  return new Date(iso).toLocaleString('es', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+  return new Date(iso).toLocaleString('en', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
 }
 
 function renderHistoryList(runs) {
   if (!runs.length) {
-    histPanel.innerHTML = '<p class="hist-empty">No hay debates guardados todavía. Lanza un diagnóstico para verlo aquí.</p>';
+    histPanel.innerHTML = '<p class="hist-empty">No saved debates yet. Launch a diagnosis to see it here.</p>';
     return;
   }
 
   histPanel.innerHTML = '';
   const title = document.createElement('div');
   title.className = 'hist-title';
-  title.textContent = 'Historial de debates';
+  title.textContent = 'Debate history';
   histPanel.appendChild(title);
 
   const table = document.createElement('table');
   table.className = 'hist-table';
   table.innerHTML = '<thead><tr>' +
-    '<th>Tema</th><th>Modelos</th><th>Fecha inicio</th><th>Duración</th><th>Estado</th><th></th>' +
+    '<th>Topic</th><th>Models</th><th>Start date</th><th>Duration</th><th>Status</th><th></th>' +
     '</tr></thead>';
   const tbody = document.createElement('tbody');
 
@@ -1293,8 +1293,8 @@ function renderHistoryList(runs) {
       '<td>' + durHtml + '</td>' +
       '<td>' + statusBadge(r.status) + '</td>' +
       '<td><div class="hist-actions">' +
-        '<button class="btn-sm btn-open" data-act="open">' + (r.status === 'running' ? 'Ver en vivo' : 'Abrir') + '</button>' +
-        '<button class="btn-sm btn-del" data-act="del"' + (r.status === 'running' ? ' disabled' : '') + '>Eliminar</button>' +
+        '<button class="btn-sm btn-open" data-act="open">' + (r.status === 'running' ? 'Watch live' : 'Open') + '</button>' +
+        '<button class="btn-sm btn-del" data-act="del"' + (r.status === 'running' ? ' disabled' : '') + '>Delete</button>' +
       '</div></td>';
 
     tr.querySelector('[data-act="open"]').addEventListener('click', () => openRun(r.run_id));
@@ -1311,10 +1311,10 @@ async function openRun(runId) {
   let data;
   try {
     const res = await fetch('/api/runs/' + runId);
-    if (!res.ok) { alert('No se pudo cargar el debate.'); return; }
+    if (!res.ok) { alert('The debate could not be loaded.'); return; }
     data = await res.json();
   } catch (err) {
-    alert('Error al cargar: ' + err.message);
+    alert('Error loading: ' + err.message);
     return;
   }
 
@@ -1328,7 +1328,7 @@ async function openRun(runId) {
 
   if (data.status === 'running') {
     // Live run: subscribe — the server replays buffered events first.
-    setStatus('running', 'Conectando...');
+    setStatus('running', 'Connecting...');
     btn.disabled = true;
     showStop();
     watchRun(runId);
@@ -1339,14 +1339,14 @@ async function openRun(runId) {
   isLive = false;
   const banner = document.createElement('div');
   banner.className = 'replay-banner';
-  banner.innerHTML = '&#9654; Reproduciendo debate &nbsp;&middot;&nbsp; <strong>' + esc(data.topic || '') + '</strong>';
+  banner.innerHTML = '&#9654; Replaying debate &nbsp;&middot;&nbsp; <strong>' + esc(data.topic || '') + '</strong>';
   thread.insertBefore(banner, typing);
 
   if (data.timestamp || data.finished_at || data.duration_seconds != null) {
     const timingParts = [];
-    if (data.timestamp) timingParts.push('Inicio: <strong>' + esc(fmtTs(data.timestamp)) + '</strong>');
-    if (data.finished_at) timingParts.push('Fin: <strong>' + esc(fmtTs(data.finished_at)) + '</strong>');
-    if (data.duration_seconds != null) timingParts.push('Duración: <strong>' + esc(fmtRunDuration(data.duration_seconds)) + '</strong>');
+    if (data.timestamp) timingParts.push('Start: <strong>' + esc(fmtTs(data.timestamp)) + '</strong>');
+    if (data.finished_at) timingParts.push('End: <strong>' + esc(fmtTs(data.finished_at)) + '</strong>');
+    if (data.duration_seconds != null) timingParts.push('Duration: <strong>' + esc(fmtRunDuration(data.duration_seconds)) + '</strong>');
     const timingBar = document.createElement('div');
     timingBar.className = 'run-timing-bar';
     timingBar.innerHTML = timingParts.map(p => '<span>' + p + '</span>').join(' &middot; ');
@@ -1363,16 +1363,16 @@ async function openRun(runId) {
 }
 
 async function deleteRun(runId, btnEl) {
-  if (!confirm('¿Eliminar este debate del historial?')) return;
+  if (!confirm('Delete this debate from the history?')) return;
   try {
     await fetch('/api/runs/' + runId, { method: 'DELETE' });
     const row = btnEl.closest('tr');
     if (row) row.remove();
     if (!histPanel.querySelector('tbody tr')) {
-      histPanel.innerHTML = '<p class="hist-empty">No hay debates guardados todavía.</p>';
+      histPanel.innerHTML = '<p class="hist-empty">No saved debates yet.</p>';
     }
   } catch (err) {
-    alert('Error al eliminar: ' + err.message);
+    alert('Error deleting: ' + err.message);
   }
 }
 
@@ -1404,7 +1404,7 @@ async function loadModels() {
     for (const id of ['sel-diag', 'sel-skeptic', 'sel-mod']) {
       const sel = document.getElementById(id);
       if (sel) {
-        sel.innerHTML = '<option value="">— Desde .env —</option>';
+        sel.innerHTML = '<option value="">— From .env —</option>';
         sel.disabled = false;
       }
     }
@@ -1439,7 +1439,7 @@ function populateSelect(id, models, selected) {
   // Default "from .env" option
   const dflt = document.createElement('option');
   dflt.value = '';
-  dflt.textContent = '— Desde .env —';
+  dflt.textContent = '— From .env —';
   if (!selected) dflt.selected = true;
   sel.appendChild(dflt);
 
@@ -1505,20 +1505,20 @@ function showAuthModal() {
   modal.innerHTML =
     '<div class="modal-card">' +
       '<div class="modal-head">' +
-        '<h3>Autenticación GitHub Copilot</h3>' +
+        '<h3>GitHub Copilot authentication</h3>' +
         '<button class="modal-close" id="auth-modal-close">&times;</button>' +
       '</div>' +
       '<div class="modal-body">' +
         '<div id="auth-current-status"></div>' +
         '<div id="auth-flow-ui" style="display:none;margin-top:1rem;">' +
-          '<p>1. Abre <a id="auth-verification-url" href="#" target="_blank">github.com/login/device</a></p>' +
-          '<p>2. Introduce el código:<br><strong id="auth-user-code"></strong></p>' +
-          '<p id="auth-polling-status" style="color:#888;margin-top:0.5rem;">Esperando autorización...</p>' +
+          '<p>1. Open <a id="auth-verification-url" href="#" target="_blank">github.com/login/device</a></p>' +
+          '<p>2. Enter the code:<br><strong id="auth-user-code"></strong></p>' +
+          '<p id="auth-polling-status" style="color:#888;margin-top:0.5rem;">Waiting for authorization...</p>' +
         '</div>' +
       '</div>' +
       '<div class="modal-foot">' +
-        '<button id="auth-start-btn" class="btn btn-primary">Conectar Copilot</button>' +
-        '<button id="auth-modal-cancel" class="btn btn-secondary">Cerrar</button>' +
+        '<button id="auth-start-btn" class="btn btn-primary">Connect Copilot</button>' +
+        '<button id="auth-modal-cancel" class="btn btn-secondary">Close</button>' +
       '</div>' +
     '</div>';
   document.body.appendChild(modal);
@@ -1548,10 +1548,10 @@ async function loadAuthStatus() {
         ? Math.floor(s.copilot_session_expires_in_seconds / 60)
         : '?';
       const cls = s.copilot_session_valid && mins > 5 ? 'auth-ok' : (mins > 0 ? 'auth-warn' : 'auth-err');
-      html += '<div class="' + cls + '">&#9679; Copilot: ' + (s.copilot_session_valid ? 'OK' : 'Expirado') +
+      html += '<div class="' + cls + '">&#9679; Copilot: ' + (s.copilot_session_valid ? 'OK' : 'Expired') +
               ' (~' + mins + ' min)</div>';
     } else {
-      html += '<div class="auth-err">&#9679; Copilot: No configurado</div>';
+      html += '<div class="auth-err">&#9679; Copilot: Not configured</div>';
     }
     if (s.github_models_configured) {
       html += '<div class="auth-ok">&#9679; GitHub Models: OK</div>';
@@ -1561,7 +1561,7 @@ async function loadAuthStatus() {
     }
     div.innerHTML = html;
   } catch (e) {
-    div.innerHTML = '<div class="auth-err">No se pudo obtener estado de auth</div>';
+    div.innerHTML = '<div class="auth-err">Could not retrieve auth status</div>';
   }
 }
 
@@ -1570,7 +1570,7 @@ async function startCopilotAuth() {
   const flowUI = document.getElementById('auth-flow-ui');
   const status = document.getElementById('auth-polling-status');
   btn.disabled = true;
-  btn.textContent = 'Iniciando...'
+  btn.textContent = 'Starting...'
 
   try {
     const resp = await fetch('/api/auth/copilot', {
@@ -1581,10 +1581,10 @@ async function startCopilotAuth() {
     const data = await resp.json();
 
     if (data.status !== 'pending') {
-      status.textContent = 'Error: ' + (data.error || 'desconocido');
+      status.textContent = 'Error: ' + (data.error || 'unknown');
       status.className = 'auth-err';
       btn.disabled = false;
-      btn.textContent = 'Reintentar';
+      btn.textContent = 'Retry';
       return;
     }
 
@@ -1607,7 +1607,7 @@ async function startCopilotAuth() {
         if (result.status === 'authorized') {
           clearInterval(_authPollInterval);
           _authPollInterval = null;
-          status.textContent = '\u2713 Autorizado. Recargando modelos...';
+          status.textContent = '\u2713 Authorized. Reloading models...';
           status.className = 'auth-ok';
           await fetch('/api/models/refresh', {method: 'POST'});
           await loadModels();
@@ -1616,34 +1616,34 @@ async function startCopilotAuth() {
         } else if (result.status === 'denied') {
           clearInterval(_authPollInterval);
           _authPollInterval = null;
-          status.textContent = '\u2717 Denegado.';
+          status.textContent = '\u2717 Denied.';
           status.className = 'auth-err';
           btn.disabled = false;
-          btn.textContent = 'Reintentar';
+          btn.textContent = 'Retry';
         } else if (result.status === 'expired') {
           clearInterval(_authPollInterval);
           _authPollInterval = null;
-          status.textContent = '\u2717 Código expirado.';
+          status.textContent = '\u2717 Code expired.';
           status.className = 'auth-err';
           btn.disabled = false;
-          btn.textContent = 'Reintentar';
+          btn.textContent = 'Retry';
         } else if (result.status === 'error') {
           clearInterval(_authPollInterval);
           _authPollInterval = null;
           status.textContent = '\u2717 ' + (result.error || 'Error');
           status.className = 'auth-err';
           btn.disabled = false;
-          btn.textContent = 'Reintentar';
+          btn.textContent = 'Retry';
         }
       } catch (e) {
-        status.textContent = 'Esperando...';
+        status.textContent = 'Waiting...';
       }
     }, intervalMs);
 
   } catch (e) {
-    status.textContent = 'Error de red: ' + e.message;
+    status.textContent = 'Network error: ' + e.message;
     status.className = 'auth-err';
     btn.disabled = false;
-    btn.textContent = 'Reintentar';
+    btn.textContent = 'Retry';
   }
 }

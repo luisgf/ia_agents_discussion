@@ -104,11 +104,11 @@ def list_templates() -> list[dict]:
 
 def get_template(name: str = "", language: str = "") -> PromptTemplate:
     """Resolve a template with graceful fallbacks:
-    (name, lang) → (name, es) → (default, lang) → (default, es)."""
+    (name, lang) → (name, en) → (default, lang) → (default, en)."""
     name = name or "default"
-    language = language or "es"
+    language = language or "en"
     templates = _load_all()
-    for key in ((name, language), (name, "es"), ("default", language), ("default", "es")):
+    for key in ((name, language), (name, "en"), ("default", language), ("default", "en")):
         if key in templates:
             return templates[key]
     raise FileNotFoundError(f"No prompt template found for '{name}' ({language}) and no default available.")

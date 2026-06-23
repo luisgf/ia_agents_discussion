@@ -96,7 +96,7 @@ def main() -> None:
         console.print("[red]Provide a topic, a --file, a --base-context, a --project, or a combination.[/red]")
         raise SystemExit(2)
 
-    topic = args.topic or "Diagnosticar el problema técnico descrito en el contexto."
+    topic = args.topic or "Diagnose the technical problem described in the context."
     context_parts = []
 
     redact_context = not args.no_redact_context

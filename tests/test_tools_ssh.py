@@ -7,7 +7,7 @@ from agents_discussion.tools import _resolve_ssh_key
 from agents_discussion.web import _append_ssh_defaults
 
 
-def _make_key(tmp_path: Path, name: str = "clave") -> Path:
+def _make_key(tmp_path: Path, name: str = "key") -> Path:
     key = tmp_path / name
     key.write_text("---KEY---")
     return key
@@ -29,13 +29,13 @@ def test_missing_requested_falls_back_to_env_default(tmp_path, monkeypatch) -> N
     monkeypatch.setenv("SSH_KEY_PATH", str(default))
     filename, note = _resolve_ssh_key("/home/user/.ssh/id_ed25519")
     assert filename == str(default)
-    assert "no existe" in note
+    assert "does not exist" in note
     assert "/home/user/.ssh/id_ed25519" in note
 
 
 def test_missing_requested_and_missing_default_fails_clearly(tmp_path, monkeypatch) -> None:
-    monkeypatch.setenv("SSH_KEY_PATH", str(tmp_path / "tampoco_existe"))
-    filename, note = _resolve_ssh_key(str(tmp_path / "no_existe"))
+    monkeypatch.setenv("SSH_KEY_PATH", str(tmp_path / "also_missing"))
+    filename, note = _resolve_ssh_key(str(tmp_path / "missing"))
     assert filename is None
     assert note.startswith("SSH key file not found")
     assert "not found either" in note
@@ -43,7 +43,7 @@ def test_missing_requested_and_missing_default_fails_clearly(tmp_path, monkeypat
 
 def test_missing_requested_no_default_fails_clearly(monkeypatch, tmp_path) -> None:
     monkeypatch.delenv("SSH_KEY_PATH", raising=False)
-    filename, note = _resolve_ssh_key(str(tmp_path / "no_existe"))
+    filename, note = _resolve_ssh_key(str(tmp_path / "missing"))
     assert filename is None
     assert note.startswith("SSH key file not found")
 
@@ -64,7 +64,7 @@ def test_empty_request_no_default_autodiscover(monkeypatch) -> None:
 def test_expanduser(tmp_path, monkeypatch) -> None:
     key = _make_key(tmp_path)
     monkeypatch.setenv("HOME", str(tmp_path))
-    filename, note = _resolve_ssh_key("~/clave")
+    filename, note = _resolve_ssh_key("~/key")
     assert filename == str(key)
     assert note == ""
 
@@ -79,6 +79,6 @@ def test_context_injects_existing_key(tmp_path) -> None:
 
 
 def test_context_omits_missing_key(tmp_path) -> None:
-    out = _append_ssh_defaults("ctx", "h", "u", 22, str(tmp_path / "no_existe"))
+    out = _append_ssh_defaults("ctx", "h", "u", 22, str(tmp_path / "missing"))
     assert "Default SSH key path" not in out
     assert "Default SSH host: h" in out

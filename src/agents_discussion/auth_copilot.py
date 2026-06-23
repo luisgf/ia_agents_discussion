@@ -241,11 +241,11 @@ def check_device_flow(device_code: str) -> dict:
         return flow
     if error == "expired_token":
         flow["status"] = "expired"
-        flow["last_error"] = "El código de dispositivo ha caducado."
+        flow["last_error"] = "The device code has expired."
         return flow
     if error == "access_denied":
         flow["status"] = "denied"
-        flow["last_error"] = "El usuario denegó el acceso."
+        flow["last_error"] = "The user denied access."
         return flow
 
     flow["status"] = "error"
@@ -261,12 +261,12 @@ def authenticate() -> str:
     interval = flow["interval"]
 
     print()
-    print("  Abre en tu navegador:")
+    print("  Open in your browser:")
     print(f"  {verification_uri}")
     print()
-    print(f"  Introduce el código: {user_code}")
+    print(f"  Enter the code: {user_code}")
     print()
-    print("  Esperando autorización...", end="", flush=True)
+    print("  Waiting for authorization...", end="", flush=True)
 
     while True:
         time.sleep(interval)
@@ -274,33 +274,33 @@ def authenticate() -> str:
         status = result["status"]
 
         if status == "authorized":
-            print(" autorizado.")
+            print(" authorized.")
             return result["ghu_token"]
         if status == "pending":
             print(".", end="", flush=True)
             continue
         if status == "expired":
-            raise RuntimeError("El código de dispositivo ha caducado.")
+            raise RuntimeError("The device code has expired.")
         if status == "denied":
-            raise RuntimeError("El usuario denegó el acceso.")
+            raise RuntimeError("The user denied access.")
         raise RuntimeError(f"Error: {result.get('last_error', 'unknown')}")
 
 
 def main() -> None:
     print("─" * 55)
-    print("  Autenticación GitHub Copilot")
+    print("  GitHub Copilot authentication")
     print("─" * 55)
 
     existing = get_ghu_token()
     if existing:
-        print(f"  Ya existe un token ({existing[:12]}...).")
-        answer = input("  ¿Nuevo? [s/N] ").strip().lower()
+        print(f"  A token already exists ({existing[:12]}...).")
+        answer = input("  New one? [y/N] ").strip().lower()
         if answer not in ("s", "si", "sí", "y", "yes"):
             try:
                 session = get_session_token(existing)
                 exp = _parse_session_expiry(session)
                 mins = max(0, int((exp - time.time()) / 60)) if exp else 0
-                print(f"  Sesión OK (caduca en ~{mins} min).")
+                print(f"  Session OK (expires in ~{mins} min).")
             except Exception as exc:
                 print(f"  Error: {exc}")
                 sys.exit(1)
@@ -309,17 +309,17 @@ def main() -> None:
     try:
         ghu_token = authenticate()
     except KeyboardInterrupt:
-        print("\n  Cancelado.")
+        print("\n  Cancelled.")
         sys.exit(0)
 
     path = save_ghu_token(ghu_token)
-    print(f"  Token guardado en: {path}")
+    print(f"  Token saved to: {path}")
 
     try:
         session = get_session_token(ghu_token)
         exp = _parse_session_expiry(session)
         mins = max(0, int((exp - time.time()) / 60)) if exp else 25
-        print(f"  Sesión OK (caduca en ~{mins} min, auto-renovable).")
+        print(f"  Session OK (expires in ~{mins} min, auto-renewable).")
     except Exception as exc:
         print(f"  Error: {exc}")
         sys.exit(1)

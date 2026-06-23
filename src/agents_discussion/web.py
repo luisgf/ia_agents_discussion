@@ -566,13 +566,13 @@ async def resume_run(
     require_approval: Annotated[str, Form()] = "",
 ) -> JSONResponse:
     if run_id in SESSIONS:
-        return JSONResponse({"detail": "El debate todavía está en curso."}, status_code=409)
+        return JSONResponse({"detail": "The debate is still in progress."}, status_code=409)
     parent = store.get(run_id)
     if parent is None:
         return JSONResponse({"detail": "Run not found."}, status_code=404)
     if not new_evidence.strip() and not (evidence_file or []):
         return JSONResponse(
-            {"detail": "Aporta nueva evidencia (texto o archivos) para reanudar."},
+            {"detail": "Provide new evidence (text or files) to resume."},
             status_code=400,
         )
 
@@ -589,7 +589,7 @@ async def resume_run(
 
     context = parent.get("context", "")
     context = (context + "\n\n" if context else "") + (
-        "=== Evidencia adicional aportada al reanudar el debate ===\n" + "\n\n".join(extra_parts)
+        "=== Additional evidence provided when resuming the debate ===\n" + "\n\n".join(extra_parts)
     )
 
     meta = {

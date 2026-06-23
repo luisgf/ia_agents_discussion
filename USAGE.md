@@ -203,11 +203,11 @@ The live view shows:
 When a sensitive tool is invoked, the UI shows:
 
 ```
-⚠️ Aprobación requerida
+⚠️ Approval required
 run_ssh_command on prod-01
 Command: ps aux | grep python
-Agent: Diagnóstico Principal
-[Aprobar] [Rechazar]
+Agent: Primary Diagnosis
+[Approve] [Reject]
 ```
 
 **Auto timeout:** If no response within `APPROVAL_TIMEOUT_SECONDS`, the tool is rejected.
@@ -374,7 +374,7 @@ event: message
 data: {"type":"agent_delta","agent_node":"diagnostic_agent","delta":"Based on"}
 
 event: message
-data: {"type":"agent_completed","node":"diagnostic_agent","role":"Diagnóstico Principal","content":"..."}
+data: {"type":"agent_completed","node":"diagnostic_agent","role":"Primary Diagnosis","content":"..."}
 
 event: message
 data: {"type":"moderator_decision","node":"moderator_agent","decision":{"status":"continue",...},...}
@@ -410,7 +410,7 @@ GET /api/prompts
       "name": "default",
       "language": "es",
       "version": 1,
-      "description": "Diagnóstico general",
+      "description": "General diagnosis",
       "source": "builtin"
     },
     {
@@ -601,7 +601,7 @@ diagnostic_agent → run_ssh_command("prod-01", "df -h /var/log")
 The report shows hypothesis evolution:
 
 ```markdown
-## Hipótesis en debate
+## Hypotheses in debate
 - H-1 [confirmed]: Missing index on orders.created_at
   · EXPLAIN shows sequential scan on 10M rows
 - H-2 [rejected]: Network latency between services
@@ -628,8 +628,8 @@ This is shown in the UI as an info card and in the report header.
 When the moderator skips phases:
 
 ```
-⚠️ Revisor Escéptico omitido
-Razón: Evidence is conclusive; no ambiguity to falsify
+⚠️ Skeptical Reviewer skipped
+Reason: Evidence is conclusive; no ambiguity to falsify
 ```
 
 This indicates the moderator short-circuited the standard flow, usually due to early-out or low-value critique.

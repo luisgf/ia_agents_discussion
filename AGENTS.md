@@ -1,48 +1,48 @@
-# Agents Discussion — Memoria del proyecto
+# Agents Discussion — Project memory
 
-Plataforma de diagnóstico técnico multiagente para incidencias de producción.
-Orquesta un debate estructurado entre tres agentes LLM sobre un problema técnico,
-con herramientas ReAct de inspección de infraestructura y supervisión humana opcional.
+Multi-agent technical diagnosis platform for production incidents.
+It orchestrates a structured debate between three LLM agents about a technical
+problem, with ReAct tools for infrastructure inspection and optional human oversight.
 
 ---
 
-## Stack tecnológico
+## Technology stack
 
-| Capa | Tecnología |
+| Layer | Technology |
 |---|---|
-| Orquestación de agentes | LangGraph (`StateGraph`) |
-| Modelos LLM | `langchain-openai` → GitHub Models / GitHub Copilot |
-| API web | FastAPI + SSE (Server-Sent Events) |
-| Frontend | Vanilla JS, CSS, HTML — sin build pipeline |
-| Persistencia | JSON files en `~/.local/share/agents-discussion/runs/` |
+| Agent orchestration | LangGraph (`StateGraph`) |
+| LLM models | `langchain-openai` → GitHub Models / GitHub Copilot |
+| Web API | FastAPI + SSE (Server-Sent Events) |
+| Frontend | Vanilla JS, CSS, HTML — no build pipeline |
+| Persistence | JSON files in `~/.local/share/agents-discussion/runs/` |
 | Config | `pydantic-settings` + `.env` |
 | Python | 3.11+ |
 
 ---
 
-## Estructura de archivos (src/agents_discussion/)
+## File structure (src/agents_discussion/)
 
 ```
-graph.py          — Definición del grafo LangGraph, nodos agentes, routing
-state.py          — TypedDict DebateState + modelos Pydantic (Hypothesis, ModeratorDecision…)
+graph.py          — LangGraph graph definition, agent nodes, routing
+state.py          — TypedDict DebateState + Pydantic models (Hypothesis, ModeratorDecision…)
 web.py            — FastAPI routes, SSE streaming, RunStore, RunSession
-models.py         — Factory ChatOpenAI para GitHub Models / Copilot
-pricing.py        — Tabla de precios y estimación de coste por tokens (USD/1M)
-prompts.py        — Construcción de prompts por agente (funciones puras)
-prompt_store.py   — Carga de plantillas YAML (built-in + custom)
-config.py         — Pydantic-settings, env vars con aliases
+models.py         — ChatOpenAI factory for GitHub Models / Copilot
+pricing.py        — Price table and per-token cost estimation (USD/1M)
+prompts.py        — Per-agent prompt construction (pure functions)
+prompt_store.py   — Loading of YAML templates (built-in + custom)
+config.py         — Pydantic-settings, env vars with aliases
 tools.py          — @tool: SSH, kubectl, HTTP, Prometheus, Loki, Elasticsearch, DB EXPLAIN, git
-runtime.py        — RunControl: cancelación, aprobación de tools, HITL
-report.py         — Generación de informe Markdown desde run record
-audit.py          — audit.jsonl append-only por invocación de tool
-cli.py            — CLI con argparse + Rich
+runtime.py        — RunControl: cancellation, tool approval, HITL
+report.py         — Markdown report generation from the run record
+audit.py          — append-only audit.jsonl per tool invocation
+cli.py            — CLI with argparse + Rich
 static/           — Frontend: index.html, css/app.css, js/app.js
-prompt_templates/ — YAML built-in (default, performance, errors, data, security)
+prompt_templates/ — built-in YAML (default, performance, errors, data, security)
 ```
 
 ---
 
-## Topología del grafo (LangGraph)
+## Graph topology (LangGraph)
 
 ```
 START → diagnostic_agent → skeptic_agent → diagnostic_rebuttal_agent
@@ -50,47 +50,47 @@ START → diagnostic_agent → skeptic_agent → diagnostic_rebuttal_agent
                                                                  → finalize → END
 ```
 
-- **diagnostic_agent**: hipótesis principal + tools ReAct (modelo: `diagnostic_model`)
-- **skeptic_agent**: falsifica hipótesis + tools ReAct (modelo: `skeptic_model`)
-- **diagnostic_rebuttal_agent**: responde al escéptico + refina hipótesis (reutiliza `diagnostic_model`)
-- **moderator_agent**: decide continuación/cierre + `flow_directive` para siguiente ronda (modelo: `moderator_model`)
-- **summarize_history**: comprime history antigua en rounds > 2 (modelo: `summary_model`, por defecto = `moderator_model`)
-- **user_input_gate**: bloquea opcionalmente entre rondas para comentarios del operador
+- **diagnostic_agent**: primary hypothesis + ReAct tools (model: `diagnostic_model`)
+- **skeptic_agent**: falsifies hypotheses + ReAct tools (model: `skeptic_model`)
+- **diagnostic_rebuttal_agent**: responds to the skeptic + refines hypotheses (reuses `diagnostic_model`)
+- **moderator_agent**: decides whether to continue/close + `flow_directive` for the next round (model: `moderator_model`)
+- **summarize_history**: compresses old history when rounds > 2 (model: `summary_model`, defaults to = `moderator_model`)
+- **user_input_gate**: optionally blocks between rounds for operator comments
 
 ### Routing
 
-- `moderator_agent` → `finalize` si: status ∉ {continue, needs_more_data} O round > max_rounds
-- `moderator_agent` → `summarize_history` si: continúa
-- `summarize_history` → `user_input_gate` si: `pause_between_rounds=True`
+- `moderator_agent` → `finalize` if: status ∉ {continue, needs_more_data} OR round > max_rounds
+- `moderator_agent` → `summarize_history` if: it continues
+- `summarize_history` → `user_input_gate` if: `pause_between_rounds=True`
 - `summarize_history` → `diagnostic_agent` otherwise
 
 ---
 
-## Estado principal (DebateState)
+## Main state (DebateState)
 
-Campos clave del TypedDict (ver `state.py` para la definición completa):
+Key fields of the TypedDict (see `state.py` for the full definition):
 
 ```python
-topic, context          # Problema y contexto de entrada
-round, max_rounds       # Contador de ronda actual y máximo
-diagnostic_model        # Nombre del modelo asignado al diagnóstico
-skeptic_model           # Modelo del escéptico
-moderator_model         # Modelo del moderador
-summary_model           # Modelo para comprimir history (vacío = usa moderator_model)
-history                 # Lista[DebateMessage] con Annotated reducer (append)
+topic, context          # Input problem and context
+round, max_rounds       # Current round counter and maximum
+diagnostic_model        # Name of the model assigned to diagnosis
+skeptic_model           # Skeptic's model
+moderator_model         # Moderator's model
+summary_model           # Model used to compress history (empty = uses moderator_model)
+history                 # List[DebateMessage] with Annotated reducer (append)
 token_usage             # Dict[agent_node, {input_tokens, output_tokens, total_tokens}] — reducer _merge_usage
-hypotheses              # Lista[Hypothesis] con reducer merge-by-id (_merge_hypotheses)
-round_log               # Lista[DebateRound] con reducer append
-tool_calls_log          # Lista[ToolCallEntry] con reducer append
-moderator_decision      # ModeratorDecision | None (último veredicto del moderador)
-early_out_recommended   # bool — señal del agente diagnóstico
-run_id                  # str — enlaza nodos con RunControl para aprobación/cancelación
-compress_history        # bool — activa la compresión de history
+hypotheses              # List[Hypothesis] with merge-by-id reducer (_merge_hypotheses)
+round_log               # List[DebateRound] with append reducer
+tool_calls_log          # List[ToolCallEntry] with append reducer
+moderator_decision      # ModeratorDecision | None (moderator's latest verdict)
+early_out_recommended   # bool — signal from the diagnostic agent
+run_id                  # str — links nodes with RunControl for approval/cancellation
+compress_history        # bool — enables history compression
 ```
 
 ---
 
-## Configuración activa (`.env`)
+## Active configuration (`.env`)
 
 ```env
 DIAGNOSTIC_MODEL=copilot/gpt-4o
@@ -102,32 +102,32 @@ CONFIDENCE_THRESHOLD=0.8
 GITHUB_MODELS_BASE_URL=https://models.github.ai/inference
 ```
 
-Tokens de autenticación (GITHUB_TOKEN / COPILOT_TOKEN) configurados por separado, no documentados aquí.
+Authentication tokens (GITHUB_TOKEN / COPILOT_TOKEN) are configured separately, not documented here.
 
-### Variables relevantes adicionales
+### Additional relevant variables
 
 ```env
-SUMMARY_MODEL=            # Vacío → usa MODERATOR_MODEL
+SUMMARY_MODEL=            # Empty → uses MODERATOR_MODEL
 COMPRESS_HISTORY=true
 EARLY_OUT_THRESHOLD=0.9
 TOOL_APPROVAL_REQUIRED=true
 APPROVAL_REQUIRED_TOOLS=run_ssh_command,run_local_command,run_kubectl,run_db_explain
-MODEL_PRICES_FILE=        # Opcional: JSON con precios USD/1M para estimación de coste
+MODEL_PRICES_FILE=        # Optional: JSON with USD/1M prices for cost estimation
 DATA_DIR=~/.local/share/agents-discussion/runs
 ```
 
 ---
 
-## Flujo de persistencia
+## Persistence flow
 
-1. `POST /api/runs` → crea `meta` con `run_id`, `timestamp` (= inicio), modelos
-2. `RunStore.create_stub()` → escribe JSON stub en `DATA_DIR/{run_id}.json` con `status: "running"`
-3. `asyncio.to_thread(_run_debate_sync)` → hilo worker ejecuta el grafo
-4. `_run_debate_sync` itera `stream_debate_events()` → publica cada evento en `RunSession.events`
-5. Al finalizar `_drive_run.finally`: calcula `finished_at`, `duration_seconds`, extrae `token_totals`/`cost_estimate`
-6. `RunStore.save()` → escribe JSON final atómicamente (temp + rename)
+1. `POST /api/runs` → creates `meta` with `run_id`, `timestamp` (= start), models
+2. `RunStore.create_stub()` → writes a JSON stub in `DATA_DIR/{run_id}.json` with `status: "running"`
+3. `asyncio.to_thread(_run_debate_sync)` → worker thread runs the graph
+4. `_run_debate_sync` iterates over `stream_debate_events()` → publishes each event to `RunSession.events`
+5. On completion in `_drive_run.finally`: computes `finished_at`, `duration_seconds`, extracts `token_totals`/`cost_estimate`
+6. `RunStore.save()` → writes the final JSON atomically (temp + rename)
 
-Campos en el JSON persistido:
+Fields in the persisted JSON:
 ```json
 {
   "run_id", "topic", "timestamp", "finished_at", "duration_seconds",
@@ -136,91 +136,91 @@ Campos en el JSON persistido:
 }
 ```
 
-`_EPHEMERAL_EVENTS` (no persistidos): `agent_turn_started`, `agent_delta`
+`_EPHEMERAL_EVENTS` (not persisted): `agent_turn_started`, `agent_delta`
 
 ---
 
-## Captura de tokens
+## Token capture
 
-Implementada en `graph.py`. Cada llamada LLM retorna `usage_metadata`:
+Implemented in `graph.py`. Each LLM call returns `usage_metadata`:
 
-- **Agentes con tools** (`_run_with_tools`): acumula `usage_metadata` por iteración del bucle ReAct;
-  devuelve `(content, tool_log, usage_dict)`. Los nodos añaden `{"token_usage": {node_name: usage_dict}}` al estado.
-- **Streaming** (`_invoke_streaming`): `stream_usage=True` en `model.stream()`.
-- **Moderador**: `with_structured_output(ModeratorDecision, include_raw=True)` para capturar tokens del output estructurado.
-- **Summary**: directamente desde `summary_response.usage_metadata`.
-- `stream_debate_events()` acumula de los updates del grafo y emite en `run_finished`:
+- **Agents with tools** (`_run_with_tools`): accumulates `usage_metadata` per ReAct loop iteration;
+  returns `(content, tool_log, usage_dict)`. The nodes add `{"token_usage": {node_name: usage_dict}}` to the state.
+- **Streaming** (`_invoke_streaming`): `stream_usage=True` in `model.stream()`.
+- **Moderator**: `with_structured_output(ModeratorDecision, include_raw=True)` to capture the tokens of the structured output.
+- **Summary**: directly from `summary_response.usage_metadata`.
+- `stream_debate_events()` accumulates from the graph updates and emits in `run_finished`:
   `{"type": "run_finished", "token_totals": {...}, "cost_estimate": {...}}`
 
-### Estimación de coste (`pricing.py`)
+### Cost estimation (`pricing.py`)
 
-- Tabla de precios por defecto para ~30 modelos (OpenAI, Anthropic, Google, Meta, Mistral, Phi, Cohere)
-- `_normalize_name(model)`: strips prefixes (`copilot/`, `openai/`…), normaliza separadores a `-`
-- `_find_price(model, prices)`: lookup exacto + fuzzy por subcadena más larga
+- Default price table for ~30 models (OpenAI, Anthropic, Google, Meta, Mistral, Phi, Cohere)
+- `_normalize_name(model)`: strips prefixes (`copilot/`, `openai/`…), normalizes separators to `-`
+- `_find_price(model, prices)`: exact lookup + fuzzy match by longest substring
 - `estimate_cost(token_usage, models_by_role, prices_file)` → `{by_node, total_usd, has_prices}`
-- Personalizable via `MODEL_PRICES_FILE` (.env) → JSON `{"modelo": {"input": X, "output": Y}}`
+- Customizable via `MODEL_PRICES_FILE` (.env) → JSON `{"model": {"input": X, "output": Y}}`
 
 ---
 
-## Convenciones de código
+## Code conventions
 
 - **Formatter/Linter**: Ruff (target-version = py311, line-length = 120)
-- **Pre-commit obligatorio**: `ruff check .` + `ruff format --check .` + `python -m py_compile *.py`
-- **Imports**: stdlib → third-party → first-party (absolutos, no relativos)
-- **Type hints**: requeridos en todas las firmas; `str | None` (no `Optional[str]`)
+- **Mandatory pre-commit**: `ruff check .` + `ruff format --check .` + `python -m py_compile *.py`
+- **Imports**: stdlib → third-party → first-party (absolute, not relative)
+- **Type hints**: required on all signatures; `str | None` (not `Optional[str]`)
 - **Logging**: `_log = logging.getLogger(__name__)`, no `print()`
-- **Errores LLM**: `except Exception as exc:  # noqa: BLE001` + `_log.warning`
-- **Node returns**: dicts parciales (solo los campos modificados)
-- **Frontend JS**: `const`/`let`, no `var`; siempre `esc()` para texto usuario, `md()` para markdown
-- **Nuevos campos de estado**: añadir en `state.py` con el reducer apropiado; inicializar en `create_initial_state()`
-- **Tests**: `tests/` con pytest (`.venv/bin/python -m pytest`); lógica pura sin LLM (modelos stub, monkeypatch de `create_github_model`/`get_settings`)
+- **LLM errors**: `except Exception as exc:  # noqa: BLE001` + `_log.warning`
+- **Node returns**: partial dicts (only the modified fields)
+- **Frontend JS**: `const`/`let`, no `var`; always `esc()` for user text, `md()` for markdown
+- **New state fields**: add them in `state.py` with the appropriate reducer; initialize in `create_initial_state()`
+- **Tests**: `tests/` with pytest (`.venv/bin/python -m pytest`); pure logic without LLM (stub models, monkeypatch of `create_github_model`/`get_settings`)
 
 ---
 
-## Patrones importantes
+## Important patterns
 
-### Añadir un nuevo campo al estado
+### Adding a new state field
 
-1. Añadir a `DebateState` en `state.py` con su reducer si es acumulable
-2. Inicializar en `create_initial_state()` en `graph.py`
-3. Si debe persistirse en la lista del historial: añadir a `list_runs` `keys` en `web.py:89`
-4. Si debe estar en el record final: incluir en `RunSession.record()` o en el registro extra
+1. Add it to `DebateState` in `state.py` with its reducer if it is accumulable
+2. Initialize it in `create_initial_state()` in `graph.py`
+3. If it must be persisted in the history list: add it to the `list_runs` `keys` in `web.py:89`
+4. If it must be in the final record: include it in `RunSession.record()` or in the extra registration
 
-### Añadir una nueva tool
+### Adding a new tool
 
-1. Definir en `tools.py` con `@tool`
-2. Añadir a `APPROVAL_REQUIRED_TOOLS` si es sensible
-3. Los agentes la ven automáticamente si `tools_enabled=True` y el nombre está en `enabled_tool_set`
+1. Define it in `tools.py` with `@tool`
+2. Add it to `APPROVAL_REQUIRED_TOOLS` if it is sensitive
+3. The agents see it automatically if `tools_enabled=True` and the name is in `enabled_tool_set`
 
-### Añadir un nuevo tipo de evento SSE
+### Adding a new SSE event type
 
-1. Emitir desde `stream_debate_events()` (graph.py) o `RunControl.emit()` (runtime.py)
-2. Manejar en `renderEvent(ev)` en app.js
-3. Si no es efímero, se persiste automáticamente en el JSON del run
+1. Emit it from `stream_debate_events()` (graph.py) or `RunControl.emit()` (runtime.py)
+2. Handle it in `renderEvent(ev)` in app.js
+3. If it is not ephemeral, it is persisted automatically in the run's JSON
 
-### Skips de agentes
+### Agent skips
 
-Los nodos `skeptic_agent` y `diagnostic_rebuttal_agent` comprueban `_should_skip()` al inicio.
-Las skips se implementan como passthrough (retornan placeholder), no como reconstrucción del grafo.
+The `skeptic_agent` and `diagnostic_rebuttal_agent` nodes check `_should_skip()` at the start.
+Skips are implemented as passthrough (they return a placeholder), not as a graph rebuild.
 
 ---
 
-## Estructura del JSON de run (eventos relevantes)
+## Run JSON structure (relevant events)
 
 ```
 run_started         → {topic, max_rounds, confidence_threshold, template, language}
-agent_turn_started  → {agent_node, agent_role}                    [EFÍMERO]
-agent_delta         → {agent_node, agent_role, delta}             [EFÍMERO]
+agent_turn_started  → {agent_node, agent_role}                    [EPHEMERAL]
+agent_delta         → {agent_node, agent_role, delta}             [EPHEMERAL]
 agent_completed     → {node, role, content}
 agent_reasoning     → {agent_node, agent_role, content}
 agent_skipped       → {node, role, rationale}
 tool_call_started   → {call_id, agent_node, tool_name, args}
 tool_call           → {call_id, tool_name, args, result, error, approval, cached, duration_ms}
-                      approval ∈ auto|approved|rejected|timeout|cached (cached = servido del ToolCache, sin re-ejecución)
+                      approval ∈ auto|approved|rejected|timeout|cached (cached = served from the ToolCache, no re-execution)
 tool_approval_request → {tool_name, args, agent_role}
 tool_approval_resolved → {approved, approval}
 moderator_decision  → {node, decision: ModeratorDecision, round}
-hypothesis_update   → {node, round, hypotheses: [Hypothesis…]}  (snapshot completo deduplicado)
+hypothesis_update   → {node, round, hypotheses: [Hypothesis…]}  (full deduplicated snapshot)
 history_compressed  → {round, summary}
 awaiting_user_input → {round}
 user_comment        → {content}
@@ -232,154 +232,154 @@ error               → {message}
 
 ---
 
-## API REST
+## REST API
 
 ```
-POST   /api/runs                    Iniciar debate (multipart/form-data)
-GET    /api/runs                    Listar runs (proyección sin context/events)
-GET    /api/runs/{id}               Run completo con events
-GET    /api/runs/{id}/events        SSE stream en vivo
-DELETE /api/runs/{id}               Eliminar
-POST   /api/runs/{id}/resume        Reanudar con nueva evidencia
-POST   /api/runs/{id}/cancel        Cancelar
-POST   /api/runs/{id}/approval      Resolver aprobación de tool
-POST   /api/runs/{id}/comment       Comentario HITL entre rondas
-GET    /api/models                  Modelos disponibles (catálogo)
-GET    /api/prompts                 Plantillas disponibles
-GET    /api/settings                Configuración actual
-GET    /api/runs/{id}/report        Informe Markdown
+POST   /api/runs                    Start a debate (multipart/form-data)
+GET    /api/runs                    List runs (projection without context/events)
+GET    /api/runs/{id}               Full run with events
+GET    /api/runs/{id}/events        Live SSE stream
+DELETE /api/runs/{id}               Delete
+POST   /api/runs/{id}/resume        Resume with new evidence
+POST   /api/runs/{id}/cancel        Cancel
+POST   /api/runs/{id}/approval      Resolve tool approval
+POST   /api/runs/{id}/comment       HITL comment between rounds
+GET    /api/models                  Available models (catalog)
+GET    /api/prompts                 Available templates
+GET    /api/settings                Current configuration
+GET    /api/runs/{id}/report        Markdown report
 ```
 
 ---
 
-## Cambios recientes implementados
+## Recently implemented changes
 
-### Historial de debates: tiempos y duración
-- `RunSession` registra `started_at` (= `meta["timestamp"]`), `finished_at`, `duration_seconds`
-- Tabla del historial: nueva columna **Duración** + subtítulo `~Xk tok` cuando hay datos
-- Detalle del run: barra `.run-timing-bar` con Inicio / Fin / Duración debajo del banner de replay
-- Informe Markdown: líneas **Inicio**, **Fin**, **Duración** en la cabecera
+### Debate history: timing and duration
+- `RunSession` records `started_at` (= `meta["timestamp"]`), `finished_at`, `duration_seconds`
+- History table: new **Duration** column + `~Xk tok` subtitle when data is available
+- Run detail: `.run-timing-bar` bar with Start / End / Duration below the replay banner
+- Markdown report: **Start**, **End**, **Duration** lines in the header
 
-### Bug modelos usados (2 → 3)
-- `app.js` `renderHistoryList`: array ahora incluye `diagnostic + skeptic + moderator` (antes faltaba moderator)
+### Models-used bug (2 → 3)
+- `app.js` `renderHistoryList`: the array now includes `diagnostic + skeptic + moderator` (moderator was missing before)
 
-### Consumo de tokens + estimación de coste
-- Nuevo módulo `pricing.py` con tabla de precios y `estimate_cost()`
-- `DebateState.token_usage` con reducer `_merge_usage` que acumula por nodo
-- Captura en todos los puntos: streaming (`stream_usage=True`), moderador (`include_raw=True`), summary (`.usage_metadata`)
-- `run_finished` event incluye `token_totals` y `cost_estimate`
-- Frontend: `buildTokenStatsCard()` en detalle del run
-- Informe Markdown: sección **Consumo de tokens** con tabla por agente y coste estimado
-- `.env`: nueva variable `MODEL_PRICES_FILE` documentada
+### Token consumption + cost estimation
+- New `pricing.py` module with a price table and `estimate_cost()`
+- `DebateState.token_usage` with the `_merge_usage` reducer that accumulates per node
+- Capture at all points: streaming (`stream_usage=True`), moderator (`include_raw=True`), summary (`.usage_metadata`)
+- `run_finished` event includes `token_totals` and `cost_estimate`
+- Frontend: `buildTokenStatsCard()` in the run detail
+- Markdown report: **Token consumption** section with a per-agent table and estimated cost
+- `.env`: new `MODEL_PRICES_FILE` variable documented
 
-### Mockup: mapa interactivo de hipótesis
-- **`static/vendor/cytoscape.min.js`** — Cytoscape.js 3.30.2 vendorizado (patrón = marked/purify)
-- **`static/mockup-hypotheses.html`** — página autónoma de demostración, accesible en `/static/mockup-hypotheses.html`
-  - 6 hipótesis de ejemplo con los 3 estados (`active`/`confirmed`/`rejected`), 3 rondas, evidencias y transiciones
-  - **Vista radial** (layout `cose`): nodo PROBLEMA → agentes → hipótesis; aristas azul=propuso, verde=confirmó, rojo-discontinuo=refutó
-  - **Vista línea de tiempo** (layout `preset`): columnas por ronda, filas por hipótesis, evolución de estados
-  - Filtro de ronda (All/1/2/3), botón ▶ Reproducir (revela nodos ronda a ronda simulando SSE), panel lateral con detalle completo e historial de transiciones
-  - Paleta heredada de `app.css` (variables `--diag`, `--final`, `--err`, etc.)
+### Mockup: interactive hypothesis map
+- **`static/vendor/cytoscape.min.js`** — Cytoscape.js 3.30.2 vendored (pattern = marked/purify)
+- **`static/mockup-hypotheses.html`** — standalone demonstration page, accessible at `/static/mockup-hypotheses.html`
+  - 6 example hypotheses with the 3 states (`active`/`confirmed`/`rejected`), 3 rounds, evidence and transitions
+  - **Radial view** (layout `cose`): PROBLEM node → agents → hypotheses; edges blue=proposed, green=confirmed, red-dashed=refuted
+  - **Timeline view** (layout `preset`): columns per round, rows per hypothesis, state evolution
+  - Round filter (All/1/2/3), ▶ Play button (reveals nodes round by round, simulating SSE), side panel with full detail and transition history
+  - Palette inherited from `app.css` (variables `--diag`, `--final`, `--err`, etc.)
 
-## Modelo de hipótesis (implementación real)
+## Hypothesis model (real implementation)
 
-El mapa de hipótesis está integrado en la UI real (pestaña **Mapa**); el mockup queda como referencia de diseño.
+The hypothesis map is integrated into the real UI (the **Map** tab); the mockup remains as a design reference.
 
-### Modelo `Hypothesis` (`state.py`)
+### `Hypothesis` model (`state.py`)
 
 ```python
-class HypothesisTransition(BaseModel):    # serializar SIEMPRE con model_dump(by_alias=True)
+class HypothesisTransition(BaseModel):    # ALWAYS serialize with model_dump(by_alias=True)
     round: int
-    from_state: str | None   # alias "from"; None = creación
+    from_state: str | None   # alias "from"; None = creation
     to_state: str             # alias "to"
     agent: str
     note: str
 
 class Hypothesis(BaseModel):
-    id: str                # id crudo del LLM (HYPOTHESIS-<n>); clave canónica de merge
+    id: str                # raw id from the LLM (HYPOTHESIS-<n>); canonical merge key
     text: str
     state: Literal["active", "rejected", "confirmed"]
-    proposer: str          # siempre "diagnostic_agent" en la práctica
-    round: int             # ronda de CREACIÓN (las transiciones llevan su propia ronda)
-    probability: float | None  # P estimada por los agentes (formato "### HYPOTHESIS-n [P=0.6]"); clamp en extracción
-    supporting_evidence: list[str]   # líneas [tool:...] del bloque de la hipótesis
+    proposer: str          # always "diagnostic_agent" in practice
+    round: int             # CREATION round (transitions carry their own round)
+    probability: float | None  # P estimated by the agents (format "### HYPOTHESIS-n [P=0.6]"); clamped during extraction
+    supporting_evidence: list[str]   # [tool:...] lines from the hypothesis block
     rejected_reason: str | None
     transitions: list[HypothesisTransition]
 ```
 
-El escéptico recalibra P por hipótesis (`[P=<0-1>]` junto al id en su respuesta, parseado en
-`skeptic_agent`); en el merge, P entrante `None` conserva la anterior.
+The skeptic recalibrates P per hypothesis (`[P=<0-1>]` next to the id in its response, parsed in
+`skeptic_agent`); during the merge, an incoming P of `None` keeps the previous one.
 
-### Diseño implementado
+### Implemented design
 
-- **Reducer `_merge_hypotheses`** (state.py): merge by id, orden de primera aparición; conserva `round`/`proposer` originales, toma `state`/`text`/`rejected_reason` entrantes, union de evidencias, dedup de transiciones por `(round, to_state, agent)` descartando creaciones re-emitidas.
-- **IDs estables**: el prompt del diagnóstico recibe las hipótesis en debate (`diagnostic_prompt(..., hypotheses=...)`) e instruye a reutilizar ids exactos y continuar la numeración. El fallback sin formato usa id round-scoped `R{n}-F1` para no fusionar fallbacks de rondas distintas.
-- **Evidencias**: `_split_hypothesis_block` (graph.py) separa el texto de la hipótesis de las líneas `[tool:...]` (máx. 5, 250 chars c/u).
-- **Transiciones**: creación en `_extract_hypotheses`; cambios de estado en `skeptic_agent` (que ahora devuelve **solo** las hipótesis modificadas; el reducer fusiona).
-- **Evento SSE `hypothesis_update`**: emitido en `stream_debate_events()` tras el `agent_completed` de cualquier nodo cuyo update traiga `hypotheses`; payload = snapshot completo deduplicado (`model_dump(by_alias=True)`, reconstruido con el propio reducer porque los updates del stream son parciales). No es efímero → se persiste y el replay reconstruye el mapa.
+- **`_merge_hypotheses` reducer** (state.py): merge by id, ordered by first appearance; keeps the original `round`/`proposer`, takes the incoming `state`/`text`/`rejected_reason`, unions the evidence, dedups transitions by `(round, to_state, agent)` discarding re-emitted creations.
+- **Stable IDs**: the diagnostic prompt receives the hypotheses under debate (`diagnostic_prompt(..., hypotheses=...)`) and instructs reusing exact ids and continuing the numbering. The unformatted fallback uses a round-scoped id `R{n}-F1` to avoid merging fallbacks from different rounds.
+- **Evidence**: `_split_hypothesis_block` (graph.py) separates the hypothesis text from the `[tool:...]` lines (max 5, 250 chars each).
+- **Transitions**: creation in `_extract_hypotheses`; state changes in `skeptic_agent` (which now returns **only** the modified hypotheses; the reducer merges them).
+- **`hypothesis_update` SSE event**: emitted in `stream_debate_events()` after the `agent_completed` of any node whose update carries `hypotheses`; payload = full deduplicated snapshot (`model_dump(by_alias=True)`, rebuilt with the reducer itself because the stream updates are partial). It is not ephemeral → it is persisted and the replay rebuilds the map.
 
-### Exclusión deliberada
+### Deliberate exclusion
 
-`diagnostic_rebuttal_agent` no actualiza hipótesis: su salida es texto libre sin formato parseable. La emisión SSE es genérica (cualquier `node_update` con `hypotheses`), así que incorporarlo solo requiere que el nodo devuelva hipótesis.
+`diagnostic_rebuttal_agent` does not update hypotheses: its output is free text with no parseable format. The SSE emission is generic (any `node_update` with `hypotheses`), so incorporating it only requires that the node return hypotheses.
 
-### Frontend: pestaña Mapa
+### Frontend: Map tab
 
-- **`static/js/hypothesis-map.js`** — módulo IIFE que expone `window.HypoMap` con `setTopic / update / setDecision / reset / show`.
-- Layout `concentric` determinista: topic al centro, anillo = ronda de creación. Render incremental (`cy.add()` / `node.data()`, sin destroy+rebuild); `fit` solo en el primer layout para no robar el zoom al usuario.
-- Lazy-init obligatorio: el contenedor nace oculto (Cytoscape mediría 0×0); `show()` crea/resizea y sincroniza si hay updates pendientes (dirty flag).
-- Filtro de ronda dinámico (clase `.dimmed`), panel lateral de detalle (evidencias, motivo de rechazo, historial de transiciones), tooltip con texto completo, replay de transiciones de estado (no solo apariciones).
-- Hipótesis líder: Jaccard de tokens entre `moderator_decision.leading_hypothesis` y `h.text`; score ≥ 0.3 marca el nodo con halo `.leader`; siempre se muestra la franja superior con el texto del moderador.
-- Wiring en `app.js`: rama `hypothesis_update` en `renderEvent` (early-return, antes de `closeToolGroup`), `setTopic` en `run_started`, `setDecision` en `moderator_decision`, `reset` en `clearThread()`, `show` al activar la pestaña.
+- **`static/js/hypothesis-map.js`** — IIFE module that exposes `window.HypoMap` with `setTopic / update / setDecision / reset / show`.
+- Deterministic `concentric` layout: topic at the center, ring = creation round. Incremental render (`cy.add()` / `node.data()`, without destroy+rebuild); `fit` only on the first layout so as not to steal the user's zoom.
+- Mandatory lazy-init: the container starts hidden (Cytoscape would measure 0×0); `show()` creates/resizes and syncs if there are pending updates (dirty flag).
+- Dynamic round filter (`.dimmed` class), side detail panel (evidence, rejection reason, transition history), tooltip with full text, replay of state transitions (not just appearances).
+- Leading hypothesis: token Jaccard between `moderator_decision.leading_hypothesis` and `h.text`; a score ≥ 0.3 marks the node with a `.leader` halo; the top banner with the moderator's text is always shown.
+- Wiring in `app.js`: `hypothesis_update` branch in `renderEvent` (early-return, before `closeToolGroup`), `setTopic` on `run_started`, `setDecision` on `moderator_decision`, `reset` on `clearThread()`, `show` when activating the tab.
 
 ---
 
-## Capacidad diagnóstica y economía de tokens
+## Diagnostic capability and token economy
 
-### Prompting metodológico (templates v2)
+### Methodological prompting (v2 templates)
 
-Los 10 YAML (`prompt_templates/{default,performance,errors,data,security}.{es,en}.yaml`, `version: 2`)
-comparten un bloque común marcado con `# --- Metodología v1 ... ---` (replicado, NO compuesto:
-los archivos son autocontenidos para no romper overrides custom; mantener sincronizado a mano):
+The 10 YAML files (`prompt_templates/{default,performance,errors,data,security}.{es,en}.yaml`, `version: 2`)
+share a common block marked with `# --- Metodología v1 ... ---` (replicated, NOT composed:
+the files are self-contained so as not to break custom overrides; keep them synchronized by hand):
 
-- `diagnostic_system` → bloque "Metodología": cronología primero (git_recent_changes + correlación),
-  diagnóstico diferencial (≥2 alternativas), priorización información/coste, guía herramienta→señal.
-  En `performance` se omite el bullet de cronología (su "Foco" ya lo cubre).
-- `skeptic_system` → test discriminante entre hipótesis competitivas + no re-abrir rechazadas sin evidencia nueva.
-- `moderator_system` → escala interpretativa de confianza (<0.3 conjetura / 0.3-0.6 plausible /
-  0.6-0.8 probable / >0.8 confirmada) + usar las P de los agentes como input.
+- `diagnostic_system` → "Methodology" block: chronology first (git_recent_changes + correlation),
+  differential diagnosis (≥2 alternatives), information/cost prioritization, tool→signal guide.
+  In `performance` the chronology bullet is omitted (its "Focus" already covers it).
+- `skeptic_system` → discriminating test between competing hypotheses + do not re-open rejected ones without new evidence.
+- `moderator_system` → interpretive confidence scale (<0.3 conjecture / 0.3-0.6 plausible /
+  0.6-0.8 probable / >0.8 confirmed) + use the agents' P values as input.
 
 ### ToolCache (runtime.py)
 
-Caché por run de resultados de tools, compartida entre agentes: `RunControl.tool_cache`
-(CLI sin control → caché local efímera por bucle). Hit solo si **misma ronda** y edad ≤ 300 s;
-solo se cachean ejecuciones con `error=False` y approval auto/approved. Un hit no re-ejecuta ni
-re-pide aprobación; se registra con `approval="cached"` (audit + tool_calls_log + evento `tool_call`
-con `cached: true`, badge «caché» en la UI). El resultado servido lleva el prefijo
-`[cached: ya ejecutado por <rol> en ronda <n>]` visible para el LLM.
+Per-run cache of tool results, shared between agents: `RunControl.tool_cache`
+(CLI without control → ephemeral local cache per loop). Hit only if **same round** and age ≤ 300 s;
+only executions with `error=False` and approval auto/approved are cached. A hit does not re-execute nor
+re-request approval; it is logged with `approval="cached"` (audit + tool_calls_log + `tool_call` event
+with `cached: true`, "cache" badge in the UI). The served result carries the prefix
+`[cached: already executed by <role> in round <n>]` visible to the LLM.
 
-### Reducción de redundancia en prompts
+### Reducing redundancy in prompts
 
-- `_history_before_current_round` (graph.py): skeptic/rebuttal/moderator reciben el history SOLO
-  hasta la ronda anterior (+ comentarios `role=="user"` de la actual) — sus respuestas de la ronda
-  en curso ya van explícitas en el prompt. El diagnóstico recibe history completo.
-  OJO: el rol del rebuttal en history es `"diagnostic_rebuttal"` (sin `_agent`).
-- **Compresión desde ronda 2** (`_history_mode`): comprimido si hay summary y round ≥ 2. En modo
-  comprimido el "history" que se pasa a los prompts es solo la cola tras el último moderador
-  (comentarios HITL); `format_history` renderiza summary + esa cola.
-- `summarize_history`: la ronda terminada se deriva del history (`finished_round = nº de mensajes
-  moderator`), NO de `state["round"]` (el moderador ya lo incrementó con `continue` — bug histórico
-  que impedía generar el resumen). El resumen es **acumulativo**: integra el summary previo con los
-  mensajes nuevos en ≤400 palabras.
-- Los tres `*_deliver` (prompts.py) piden ~600 palabras máximo y citar tools resumidas.
-- `_truncate` (tools.py) conserva 2/3 cabeza + 1/3 cola del output (antes cortaba solo el principio).
+- `_history_before_current_round` (graph.py): skeptic/rebuttal/moderator receive the history ONLY
+  up to the previous round (+ `role=="user"` comments of the current one) — their responses for the
+  current round already go explicitly in the prompt. The diagnosis receives the full history.
+  NOTE: the rebuttal's role in history is `"diagnostic_rebuttal"` (without `_agent`).
+- **Compression from round 2** (`_history_mode`): compressed if there is a summary and round ≥ 2. In compressed
+  mode the "history" passed to the prompts is only the tail after the last moderator
+  (HITL comments); `format_history` renders the summary + that tail.
+- `summarize_history`: the finished round is derived from the history (`finished_round = number of moderator
+  messages`), NOT from `state["round"]` (the moderator already incremented it with `continue` — a historical bug
+  that prevented the summary from being generated). The summary is **cumulative**: it integrates the previous summary with the new
+  messages in ≤400 words.
+- The three `*_deliver` (prompts.py) ask for ~600 words maximum and to cite tools in summary form.
+- `_truncate` (tools.py) keeps 2/3 head + 1/3 tail of the output (it used to cut only the beginning).
 
 ---
 
-## Documentación de referencia del proyecto
+## Project reference documentation
 
-| Documento | Contenido |
+| Document | Content |
 |---|---|
-| `ARCHITECTURE.md` | Diseño detallado, schema de estado, topología, decisiones |
-| `CODING_STYLE.md` | Convenciones Python y JS, patrones LangGraph |
-| `OPERATIONS.md` | Despliegue, configuración completa, troubleshooting |
-| `USAGE.md` | CLI, web UI, API, plantillas, tools |
+| `ARCHITECTURE.md` | Detailed design, state schema, topology, decisions |
+| `CODING_STYLE.md` | Python and JS conventions, LangGraph patterns |
+| `OPERATIONS.md` | Deployment, full configuration, troubleshooting |
+| `USAGE.md` | CLI, web UI, API, templates, tools |

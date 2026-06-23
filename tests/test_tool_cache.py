@@ -7,16 +7,16 @@ from agents_discussion.runtime import ToolCache
 
 def test_hit_same_round() -> None:
     cache = ToolCache()
-    cache.put("run_ssh_command", {"command": "free -m"}, "salida", "diagnostic_agent", "Diagnóstico", 1)
+    cache.put("run_ssh_command", {"command": "free -m"}, "output", "diagnostic_agent", "Diagnosis", 1)
     hit = cache.get("run_ssh_command", {"command": "free -m"}, 1)
     assert hit is not None
-    assert hit.result == "salida"
-    assert hit.agent_role == "Diagnóstico"
+    assert hit.result == "output"
+    assert hit.agent_role == "Diagnosis"
 
 
 def test_miss_different_round() -> None:
     cache = ToolCache()
-    cache.put("run_ssh_command", {"command": "free -m"}, "salida", "a", "A", 1)
+    cache.put("run_ssh_command", {"command": "free -m"}, "output", "a", "A", 1)
     assert cache.get("run_ssh_command", {"command": "free -m"}, 2) is None
 
 
@@ -38,7 +38,7 @@ def test_different_args_different_key() -> None:
     assert cache.get("t", {"command": "df -h /var"}, 1) is None
 
 
-# ── Integración con _run_with_tools (modelo y tools stub, sin LLM) ─────
+# ── Integration with _run_with_tools (stub model and tools, no LLM) ─────
 
 
 class _FakeResponse:
@@ -70,7 +70,7 @@ class _FakeTool:
 
     def invoke(self, args: dict) -> str:
         self.invocations += 1
-        return f"resultado-{self.invocations}"
+        return f"result-{self.invocations}"
 
 
 class _FakeSettings:
@@ -85,8 +85,8 @@ def test_run_with_tools_serves_duplicate_from_cache(monkeypatch) -> None:
     dup = {"name": "fake_probe", "args": {"target": "db"}, "id": "tc2"}
     model = _FakeModel(
         [
-            _FakeResponse("pensando", tool_calls=[call, dup]),
-            _FakeResponse("respuesta final"),
+            _FakeResponse("thinking", tool_calls=[call, dup]),
+            _FakeResponse("final response"),
         ]
     )
     monkeypatch.setattr(g, "get_settings", lambda: _FakeSettings())
@@ -102,8 +102,8 @@ def test_run_with_tools_serves_duplicate_from_cache(monkeypatch) -> None:
         round_number=1,
     )
 
-    assert content == "respuesta final"
-    assert tool.invocations == 1, "la segunda llamada idéntica debe servirse del caché"
+    assert content == "final response"
+    assert tool.invocations == 1, "the second identical call must be served from the cache"
     assert len(tool_log) == 2
     assert tool_log[0]["approval"] == "auto"
     assert tool_log[1]["approval"] == "cached"
@@ -127,7 +127,7 @@ def test_run_with_tools_does_not_cache_errors(monkeypatch) -> None:
         [
             _FakeResponse("r1", tool_calls=[call1]),
             _FakeResponse("r2", tool_calls=[call2]),
-            _FakeResponse("fin"),
+            _FakeResponse("end"),
         ]
     )
     monkeypatch.setattr(g, "get_settings", lambda: _FakeSettings())
@@ -143,5 +143,5 @@ def test_run_with_tools_does_not_cache_errors(monkeypatch) -> None:
         round_number=1,
     )
 
-    assert _FailingTool.invocations == 2, "los errores no se cachean: la repetición se re-ejecuta"
+    assert _FailingTool.invocations == 2, "errors are not cached: the repeated call is re-executed"
     assert all(entry["error"] for entry in tool_log)

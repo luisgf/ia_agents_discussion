@@ -1,23 +1,23 @@
-# Contexto Base Técnico
+# Technical Base Context
 
-Describe información estable del sistema para orientar a los agentes durante diagnósticos.
-No incluyas secretos reales. Si incluyes valores sensibles por error, la CLI intenta redactarlos por defecto.
+Describes stable information about the system to guide the agents during diagnostics.
+Do not include real secrets. If you include sensitive values by mistake, the CLI attempts to redact them by default.
 
-## Arquitectura
+## Architecture
 
-- Servicio principal: API HTTP en Python/FastAPI.
-- Worker asíncrono: procesa mensajes desde una cola.
-- Base de datos: PostgreSQL.
-- Caché: Redis.
-- Observabilidad: logs estructurados JSON y métricas Prometheus.
+- Main service: HTTP API in Python/FastAPI.
+- Async worker: processes messages from a queue.
+- Database: PostgreSQL.
+- Cache: Redis.
+- Observability: structured JSON logs and Prometheus metrics.
 
-## Entornos
+## Environments
 
-- Producción: Kubernetes.
-- Staging: Kubernetes con menor capacidad.
-- Desarrollo: Docker Compose.
+- Production: Kubernetes.
+- Staging: Kubernetes with lower capacity.
+- Development: Docker Compose.
 
-## Parámetros No Secretos
+## Non-Secret Parameters
 
 - DB host: postgres.internal
 - DB port: 5432
@@ -27,16 +27,16 @@ No incluyas secretos reales. Si incluyes valores sensibles por error, la CLI int
 - Queue name: orders-events
 - API base path: /api/v1
 
-## Restricciones Operativas
+## Operational Constraints
 
-- Evitar migraciones destructivas durante horario laboral.
-- Priorizar fixes reversibles.
-- Mantener compatibilidad con clientes móviles antiguos.
-- Validar cambios con tests de integración y métricas p95/p99.
+- Avoid destructive migrations during business hours.
+- Prioritize reversible fixes.
+- Maintain compatibility with legacy mobile clients.
+- Validate changes with integration tests and p95/p99 metrics.
 
-## Señales De Rendimiento Relevantes
+## Relevant Performance Signals
 
-- Latencia objetivo p95 API: < 300 ms.
-- Latencia objetivo p99 API: < 1000 ms.
-- CPU normal por pod: 35-60%.
-- Memoria normal por pod: < 70% del límite.
+- Target p95 API latency: < 300 ms.
+- Target p99 API latency: < 1000 ms.
+- Normal CPU per pod: 35-60%.
+- Normal memory per pod: < 70% of the limit.

@@ -8,7 +8,7 @@
 (function () {
   'use strict';
 
-  const STATE_LABELS = { active: 'Activa', confirmed: 'Confirmada', rejected: 'Refutada' };
+  const STATE_LABELS = { active: 'Active', confirmed: 'Confirmed', rejected: 'Refuted' };
   const STATE_ICONS  = { active: '●', confirmed: '✓', rejected: '✗' };
   const TOPIC_ID     = '__topic__';
   const PLAY_STEP_MS = 1100;
@@ -207,9 +207,9 @@
     dirty = false;
 
     if (cy.$id(TOPIC_ID).length === 0) {
-      cy.add({ data: { id: TOPIC_ID, type: 'topic', round: 0, label: truncate(topicText || 'PROBLEMA', 90) } });
+      cy.add({ data: { id: TOPIC_ID, type: 'topic', round: 0, label: truncate(topicText || 'PROBLEM', 90) } });
     } else {
-      cy.$id(TOPIC_ID).data('label', truncate(topicText || 'PROBLEMA', 90));
+      cy.$id(TOPIC_ID).data('label', truncate(topicText || 'PROBLEM', 90));
     }
 
     for (const h of hyps.values()) {
@@ -309,7 +309,7 @@
     }
     if (leaderStrip) {
       if (leaderText) {
-        leaderStrip.innerHTML = '<strong>Líder según moderador</strong>' +
+        leaderStrip.innerHTML = '<strong>Leader per moderator</strong>' +
           (leaderId ? esc(leaderId) + ' · ' : '') + esc(leaderText);
         leaderStrip.classList.remove('hidden');
       } else {
@@ -330,7 +330,7 @@
     document.getElementById('map-panel-id').textContent = hyp.id;
     document.getElementById('map-panel-text').textContent = hyp.text;
     document.getElementById('map-panel-proposer').textContent = String(hyp.proposer || '').replace('_agent', '');
-    document.getElementById('map-panel-round').textContent = 'Ronda ' + hyp.round +
+    document.getElementById('map-panel-round').textContent = 'Round ' + hyp.round +
       (hyp.probability != null ? ' · P=' + Number(hyp.probability).toFixed(2) : '');
 
     const badge = document.getElementById('map-panel-state');
@@ -398,7 +398,7 @@
     const steps = buildTimeline();
     if (!steps.length) return;
     isPlaying = true;
-    playBtn.innerHTML = '&#9632; Detener';
+    playBtn.innerHTML = '&#9632; Stop';
     playBtn.classList.add('playing');
     setRoundFilterVisual('all');
     closeDetail();
@@ -429,7 +429,7 @@
     if (!isPlaying) return;
     isPlaying = false;
     if (playTimer) { clearTimeout(playTimer); playTimer = null; }
-    playBtn.innerHTML = '&#9654; Reproducir';
+    playBtn.innerHTML = '&#9654; Replay';
     playBtn.classList.remove('playing');
     if (cy) {
       cy.$('.dimmed').removeClass('dimmed');
@@ -456,7 +456,7 @@
   window.HypoMap = {
     setTopic(topic) {
       topicText = String(topic || '');
-      if (cy && cy.$id(TOPIC_ID).length) cy.$id(TOPIC_ID).data('label', truncate(topicText || 'PROBLEMA', 90));
+      if (cy && cy.$id(TOPIC_ID).length) cy.$id(TOPIC_ID).data('label', truncate(topicText || 'PROBLEM', 90));
     },
 
     update(ev) {

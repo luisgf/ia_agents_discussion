@@ -33,7 +33,7 @@ class _FakeTool:
 
     def invoke(self, args: dict) -> str:
         self.invocations += 1
-        return "salida-tool"
+        return "tool-output"
 
 
 class _FakeSettings:
@@ -56,8 +56,8 @@ def test_empty_final_recovered_by_nudge(monkeypatch) -> None:
     model = _FakeModel(
         [
             _FakeResponse("", tool_calls=[_TOOL_CALL]),
-            _FakeResponse(""),  # final vacío → nudge
-            _FakeResponse("INFORME FINAL"),  # respuesta al nudge
+            _FakeResponse(""),  # empty final → nudge
+            _FakeResponse("FINAL REPORT"),  # response to the nudge
         ]
     )
     _patch(monkeypatch, tool)
@@ -71,7 +71,7 @@ def test_empty_final_recovered_by_nudge(monkeypatch) -> None:
         round_number=1,
     )
 
-    assert content == "INFORME FINAL"
+    assert content == "FINAL REPORT"
     assert model.invocations == 3
     assert tool.invocations == 1
     assert len(tool_log) == 1
@@ -83,7 +83,7 @@ def test_empty_after_nudge_yields_placeholder(monkeypatch) -> None:
         [
             _FakeResponse("", tool_calls=[_TOOL_CALL]),
             _FakeResponse(""),
-            _FakeResponse("   "),  # también vacío tras el nudge
+            _FakeResponse("   "),  # also empty after the nudge
         ]
     )
     _patch(monkeypatch, tool)
@@ -97,7 +97,7 @@ def test_empty_after_nudge_yields_placeholder(monkeypatch) -> None:
         round_number=1,
     )
 
-    assert content == "(El agente no entregó respuesta final tras 1 llamadas a herramientas.)"
+    assert content == "(The agent returned no final response after 1 tool calls.)"
 
 
 def test_normal_final_no_extra_invocation(monkeypatch) -> None:
@@ -105,7 +105,7 @@ def test_normal_final_no_extra_invocation(monkeypatch) -> None:
     model = _FakeModel(
         [
             _FakeResponse("", tool_calls=[_TOOL_CALL]),
-            _FakeResponse("respuesta normal"),
+            _FakeResponse("normal response"),
         ]
     )
     _patch(monkeypatch, tool)
@@ -119,7 +119,7 @@ def test_normal_final_no_extra_invocation(monkeypatch) -> None:
         round_number=1,
     )
 
-    assert content == "respuesta normal"
+    assert content == "normal response"
     assert model.invocations == 2
 
 
@@ -129,7 +129,7 @@ def test_nudge_usage_accumulated(monkeypatch) -> None:
         [
             _FakeResponse("", tool_calls=[_TOOL_CALL]),
             _FakeResponse(""),
-            _FakeResponse("INFORME"),
+            _FakeResponse("REPORT"),
         ]
     )
     _patch(monkeypatch, tool)
@@ -143,6 +143,6 @@ def test_nudge_usage_accumulated(monkeypatch) -> None:
         round_number=1,
     )
 
-    # 3 llamadas LLM × 15 tokens del stub
+    # 3 LLM calls × 15 tokens from the stub
     assert usage["total_tokens"] == 45
     assert usage["input_tokens"] == 30
