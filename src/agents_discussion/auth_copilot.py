@@ -19,6 +19,7 @@ The ghu_... token is stored in ~/.config/agents-discussion/copilot_token
 (override with the COPILOT_TOKEN_FILE env var) and can also be set directly
 via the COPILOT_TOKEN env var.
 """
+
 from __future__ import annotations
 
 import os
@@ -40,11 +41,11 @@ _SESSION_TOKEN_URL = "https://api.github.com/copilot_internal/v2/token"
 _DEFAULT_TOKEN_FILE = "~/.config/agents-discussion/copilot_token"
 
 _BASE_HEADERS: dict[str, str] = {
-    "User-Agent":            "GithubCopilot/1.155.0",
-    "Editor-Version":        "Neovim/0.6.1",
+    "User-Agent": "GithubCopilot/1.155.0",
+    "Editor-Version": "Neovim/0.6.1",
     "Editor-Plugin-Version": "copilot.vim/1.16.0",
-    "Accept":                "application/json",
-    "Content-Type":          "application/json",
+    "Accept": "application/json",
+    "Content-Type": "application/json",
 }
 
 # ── Session token cache ──────────────────────────────────────────────────────
@@ -84,6 +85,7 @@ def get_ghu_token() -> str:
         return token
     try:
         from agents_discussion.config import get_settings
+
         token = get_settings().copilot_token.strip()
         if token:
             return token
@@ -162,6 +164,7 @@ def get_auth_status() -> dict:
     if not gh_token:
         try:
             from agents_discussion.config import get_settings
+
             gh_token = get_settings().github_token.strip()
         except Exception:
             pass

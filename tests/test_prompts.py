@@ -38,7 +38,11 @@ def test_round2_cuts_at_first_moderator_keeps_user_comments() -> None:
     history = _ROUND1 + [_msg("user", "comentario HITL"), _msg("diagnostic_agent", "diag R2")]
     out = _history_before_current_round(history, 2)
     assert [m.role for m in out] == [
-        "diagnostic_agent", "skeptic_agent", "diagnostic_rebuttal", "moderator", "user",
+        "diagnostic_agent",
+        "skeptic_agent",
+        "diagnostic_rebuttal",
+        "moderator",
+        "user",
     ]
     assert out[-1].content == "comentario HITL"
 
@@ -115,7 +119,9 @@ def test_skeptic_prompt_contains_diagnostic_response_once() -> None:
 def test_moderator_prompt_contains_each_response_once() -> None:
     diag, skep, reb = "DIAG-R2-X", "SKEP-R2-Y", "REB-R2-Z"
     history = _ROUND1 + [
-        _msg("diagnostic_agent", diag), _msg("skeptic_agent", skep), _msg("diagnostic_rebuttal", reb),
+        _msg("diagnostic_agent", diag),
+        _msg("skeptic_agent", skep),
+        _msg("diagnostic_rebuttal", reb),
     ]
     filtered = _history_before_current_round(history, 2)
     prompt = moderator_prompt("topic", "", 2, 4, 0.8, 0.9, diag, skep, reb, [], history=filtered)
@@ -167,8 +173,11 @@ def test_summarize_is_cumulative(monkeypatch) -> None:
         _msg("moderator", '{"status": "continue"}'),
     ]
     state = _state(
-        history=_ROUND1 + round2, round=3,
-        history_summary="RESUMEN-PREVIO", moderator_model="m", summary_model="m",
+        history=_ROUND1 + round2,
+        round=3,
+        history_summary="RESUMEN-PREVIO",
+        moderator_model="m",
+        summary_model="m",
     )
     result = summarize_history(state)
     assert result["_summarize_event"]["round"] == 2

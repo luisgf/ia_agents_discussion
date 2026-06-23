@@ -13,6 +13,7 @@ Each YAML file must define:
   name, language, version, description,
   diagnostic_system, skeptic_system, moderator_system
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -110,6 +111,4 @@ def get_template(name: str = "", language: str = "") -> PromptTemplate:
     for key in ((name, language), (name, "es"), ("default", language), ("default", "es")):
         if key in templates:
             return templates[key]
-    raise FileNotFoundError(
-        f"No prompt template found for '{name}' ({language}) and no default available."
-    )
+    raise FileNotFoundError(f"No prompt template found for '{name}' ({language}) and no default available.")

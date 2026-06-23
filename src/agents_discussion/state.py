@@ -14,12 +14,12 @@ class DebateMessage(BaseModel):
 class ToolCallEntry(TypedDict):
     """Record of a single tool invocation made by an agent."""
 
-    agent: str       # node name, e.g. "diagnostic_agent"
-    tool_name: str   # e.g. "run_ssh_command"
-    args: dict       # arguments passed to the tool
-    result: str      # truncated output / error message
-    error: bool      # True when the tool raised an exception
-    approval: str    # auto | approved | rejected | timeout | cached
+    agent: str  # node name, e.g. "diagnostic_agent"
+    tool_name: str  # e.g. "run_ssh_command"
+    args: dict  # arguments passed to the tool
+    result: str  # truncated output / error message
+    error: bool  # True when the tool raised an exception
+    approval: str  # auto | approved | rejected | timeout | cached
 
 
 class HypothesisTransition(BaseModel):
@@ -40,13 +40,15 @@ class Hypothesis(BaseModel):
     id: str = Field(description="Unique short id, e.g. H-1, H-2.")
     text: str = Field(description="Text of the hypothesis.")
     state: Literal["active", "rejected", "confirmed"] = Field(
-        default="active", description="Current state of the hypothesis.")
+        default="active", description="Current state of the hypothesis."
+    )
     proposer: str = Field(description="Agent/node that proposed this hypothesis.")
     round: int = Field(description="Round in which this hypothesis was first proposed.")
     # No ge/le validation: the value is clamped to [0, 1] at extraction time so a
     # malformed LLM estimate never raises mid-run.
     probability: float | None = Field(
-        default=None, description="Estimated probability 0-1 from the agents; None if not stated.")
+        default=None, description="Estimated probability 0-1 from the agents; None if not stated."
+    )
     supporting_evidence: list[str] = Field(default_factory=list)
     rejected_reason: str | None = Field(default=None)
     transitions: list[HypothesisTransition] = Field(default_factory=list)
@@ -122,9 +124,9 @@ def _merge_usage(
     for key, val in (new or {}).items():
         if key in result:
             result[key] = {
-                "input_tokens":  (result[key].get("input_tokens",  0) or 0) + (val.get("input_tokens",  0) or 0),
+                "input_tokens": (result[key].get("input_tokens", 0) or 0) + (val.get("input_tokens", 0) or 0),
                 "output_tokens": (result[key].get("output_tokens", 0) or 0) + (val.get("output_tokens", 0) or 0),
-                "total_tokens":  (result[key].get("total_tokens",  0) or 0) + (val.get("total_tokens",  0) or 0),
+                "total_tokens": (result[key].get("total_tokens", 0) or 0) + (val.get("total_tokens", 0) or 0),
             }
         else:
             result[key] = {k: v or 0 for k, v in val.items()}
@@ -150,8 +152,8 @@ class ModeratorDecision(BaseModel):
     validation: list[str] = Field(default_factory=list, description="How to verify the diagnosis or fix.")
     stop_reason: str | None = Field(default=None, description="Reason to stop, if not continuing.")
     flow_directive: FlowDirective | None = Field(
-        default=None,
-        description="If set, controls which agents execute in the next round.")
+        default=None, description="If set, controls which agents execute in the next round."
+    )
 
 
 def append_messages(

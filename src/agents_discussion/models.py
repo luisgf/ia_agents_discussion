@@ -20,8 +20,8 @@ from agents_discussion.config import get_settings
 # (e.g. "gpt-4o" must NOT match the "o4" reasoning family).
 
 _VALID_EFFORTS = ("low", "medium", "high")
-_REASONING_MARKERS = ("o1", "o3", "o4")   # exact name segments for OpenAI families
-_CLAUDE_FAMILIES   = frozenset({"sonnet", "opus"})  # families that may support thinking
+_REASONING_MARKERS = ("o1", "o3", "o4")  # exact name segments for OpenAI families
+_CLAUDE_FAMILIES = frozenset({"sonnet", "opus"})  # families that may support thinking
 
 
 def _normalize_effort(value: str | None) -> str | None:
@@ -72,7 +72,7 @@ def _claude_supports_reasoning(segments: list[str]) -> bool:
     if "haiku" in segments:
         return False
     try:
-        tail = segments[segments.index("claude") + 1:]
+        tail = segments[segments.index("claude") + 1 :]
     except ValueError:
         return False
     # v4+ style: claude-{family}-{major}.{minor}  e.g. claude-sonnet-4-5
@@ -117,7 +117,10 @@ def _http_client() -> httpx.Client | None:
 
 # ── GitHub Models (ChatOpenAI → models.github.ai) ────────────────────────────
 
-def _create_github_models_model(model: str, temperature: float | None, reasoning_effort: str | None = None) -> ChatOpenAI:
+
+def _create_github_models_model(
+    model: str, temperature: float | None, reasoning_effort: str | None = None
+) -> ChatOpenAI:
     settings = get_settings()
     if not settings.github_token:
         raise ValueError(
@@ -151,12 +154,12 @@ def _create_github_models_model(model: str, temperature: float | None, reasoning
 _COPILOT_BASE_URL = "https://api.githubcopilot.com"
 
 _COPILOT_HEADERS: dict[str, str] = {
-    "User-Agent":              "GithubCopilot/1.155.0",
-    "Editor-Version":          "Neovim/0.6.1",
-    "Editor-Plugin-Version":   "copilot.vim/1.16.0",
-    "OpenAI-Intent":           "conversation-panel",
-    "OpenAI-Organization":     "github-copilot",
-    "Copilot-Integration-Id":  "vscode-chat",
+    "User-Agent": "GithubCopilot/1.155.0",
+    "Editor-Version": "Neovim/0.6.1",
+    "Editor-Plugin-Version": "copilot.vim/1.16.0",
+    "OpenAI-Intent": "conversation-panel",
+    "OpenAI-Organization": "github-copilot",
+    "Copilot-Integration-Id": "vscode-chat",
 }
 
 
@@ -196,6 +199,7 @@ def _create_copilot_model(model: str, temperature: float | None, reasoning_effor
 
 
 # ── Router ────────────────────────────────────────────────────────────────────
+
 
 def create_github_model(
     model: str,

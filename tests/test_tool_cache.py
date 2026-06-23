@@ -83,16 +83,23 @@ def test_run_with_tools_serves_duplicate_from_cache(monkeypatch) -> None:
     tool = _FakeTool()
     call = {"name": "fake_probe", "args": {"target": "db"}, "id": "tc1"}
     dup = {"name": "fake_probe", "args": {"target": "db"}, "id": "tc2"}
-    model = _FakeModel([
-        _FakeResponse("pensando", tool_calls=[call, dup]),
-        _FakeResponse("respuesta final"),
-    ])
+    model = _FakeModel(
+        [
+            _FakeResponse("pensando", tool_calls=[call, dup]),
+            _FakeResponse("respuesta final"),
+        ]
+    )
     monkeypatch.setattr(g, "get_settings", lambda: _FakeSettings())
     monkeypatch.setattr(g, "get_tools", lambda: [tool])
     monkeypatch.setattr(g, "audit_tool_call", lambda *a, **k: None)
 
     content, tool_log, usage = g._run_with_tools(
-        lambda: model, "diagnostic_agent", "sys", "user", run_id="", round_number=1,
+        lambda: model,
+        "diagnostic_agent",
+        "sys",
+        "user",
+        run_id="",
+        round_number=1,
     )
 
     assert content == "respuesta final"
@@ -116,17 +123,24 @@ def test_run_with_tools_does_not_cache_errors(monkeypatch) -> None:
     tool = _FailingTool()
     call1 = {"name": "fake_probe", "args": {"x": 1}, "id": "a"}
     call2 = {"name": "fake_probe", "args": {"x": 1}, "id": "b"}
-    model = _FakeModel([
-        _FakeResponse("r1", tool_calls=[call1]),
-        _FakeResponse("r2", tool_calls=[call2]),
-        _FakeResponse("fin"),
-    ])
+    model = _FakeModel(
+        [
+            _FakeResponse("r1", tool_calls=[call1]),
+            _FakeResponse("r2", tool_calls=[call2]),
+            _FakeResponse("fin"),
+        ]
+    )
     monkeypatch.setattr(g, "get_settings", lambda: _FakeSettings())
     monkeypatch.setattr(g, "get_tools", lambda: [tool])
     monkeypatch.setattr(g, "audit_tool_call", lambda *a, **k: None)
 
     _, tool_log, _ = g._run_with_tools(
-        lambda: model, "diagnostic_agent", "sys", "user", run_id="", round_number=1,
+        lambda: model,
+        "diagnostic_agent",
+        "sys",
+        "user",
+        run_id="",
+        round_number=1,
     )
 
     assert _FailingTool.invocations == 2, "los errores no se cachean: la repetición se re-ejecuta"

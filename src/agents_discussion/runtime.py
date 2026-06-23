@@ -17,6 +17,7 @@ Controls are looked up by run_id through the module-level registry so graph
 nodes only need the run_id present in the debate state. CLI runs have no
 registered control and therefore skip gating entirely.
 """
+
 from __future__ import annotations
 
 import json
@@ -78,8 +79,11 @@ class ToolCache:
         round_number: int,
     ) -> None:
         entry = ToolCacheEntry(
-            result=result, agent=agent, agent_role=agent_role,
-            round=round_number, ts=time.monotonic(),
+            result=result,
+            agent=agent,
+            agent_role=agent_role,
+            round=round_number,
+            ts=time.monotonic(),
         )
         with self._lock:
             self._entries[self.key(tool_name, args)] = entry
@@ -171,13 +175,15 @@ class RunControl:
         with self._approvals_lock:
             self._approvals[call_id] = req
 
-        self.emit({
-            "type": "tool_approval_request",
-            "call_id": call_id,
-            "tool_name": tool_name,
-            "args": args,
-            "agent_role": agent_role,
-        })
+        self.emit(
+            {
+                "type": "tool_approval_request",
+                "call_id": call_id,
+                "tool_name": tool_name,
+                "args": args,
+                "agent_role": agent_role,
+            }
+        )
 
         answered = req.event.wait(self.approval_timeout)
         with self._approvals_lock:
@@ -191,12 +197,14 @@ class RunControl:
             approved = bool(req.decision)
             resolution = "approved" if approved else "rejected"
 
-        self.emit({
-            "type": "tool_approval_resolved",
-            "call_id": call_id,
-            "approved": approved,
-            "resolution": resolution,
-        })
+        self.emit(
+            {
+                "type": "tool_approval_resolved",
+                "call_id": call_id,
+                "approved": approved,
+                "resolution": resolution,
+            }
+        )
         return approved, resolution
 
     # ── Live option changes (web side) ───────────────────────────────────

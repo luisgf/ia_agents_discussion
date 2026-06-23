@@ -12,6 +12,7 @@ Because GitHub Models and GitHub Copilot are subscription-based (no per-token
 billing), the cost figures are **estimates** based on each model's public API
 pricing, useful as a reference for workload sizing.
 """
+
 from __future__ import annotations
 
 import json
@@ -26,53 +27,62 @@ _log = logging.getLogger(__name__)
 
 _DEFAULT_PRICES: dict[str, dict[str, float]] = {
     # OpenAI GPT-4o family
-    "gpt-4o":                      {"input": 2.50,  "output": 10.00},
-    "gpt-4o-mini":                 {"input": 0.15,  "output": 0.60},
-    "gpt-4.1":                     {"input": 2.00,  "output": 8.00},
-    "gpt-4.1-mini":                {"input": 0.40,  "output": 1.60},
-    "gpt-4.1-nano":                {"input": 0.10,  "output": 0.40},
+    "gpt-4o": {"input": 2.50, "output": 10.00},
+    "gpt-4o-mini": {"input": 0.15, "output": 0.60},
+    "gpt-4.1": {"input": 2.00, "output": 8.00},
+    "gpt-4.1-mini": {"input": 0.40, "output": 1.60},
+    "gpt-4.1-nano": {"input": 0.10, "output": 0.40},
     # OpenAI reasoning / o-series
-    "o1":                          {"input": 15.00, "output": 60.00},
-    "o1-mini":                     {"input": 3.00,  "output": 12.00},
-    "o3":                          {"input": 10.00, "output": 40.00},
-    "o3-mini":                     {"input": 1.10,  "output": 4.40},
-    "o4-mini":                     {"input": 1.10,  "output": 4.40},
+    "o1": {"input": 15.00, "output": 60.00},
+    "o1-mini": {"input": 3.00, "output": 12.00},
+    "o3": {"input": 10.00, "output": 40.00},
+    "o3-mini": {"input": 1.10, "output": 4.40},
+    "o4-mini": {"input": 1.10, "output": 4.40},
     # Anthropic Claude
-    "claude-opus-4":               {"input": 15.00, "output": 75.00},
-    "claude-sonnet-4":             {"input": 3.00,  "output": 15.00},
-    "claude-sonnet-4-5":           {"input": 3.00,  "output": 15.00},
-    "claude-sonnet-4-6":           {"input": 3.00,  "output": 15.00},
-    "claude-3-7-sonnet":           {"input": 3.00,  "output": 15.00},
-    "claude-3-5-sonnet":           {"input": 3.00,  "output": 15.00},
-    "claude-3-5-haiku":            {"input": 0.80,  "output": 4.00},
-    "claude-3-haiku":              {"input": 0.25,  "output": 1.25},
+    "claude-opus-4": {"input": 15.00, "output": 75.00},
+    "claude-sonnet-4": {"input": 3.00, "output": 15.00},
+    "claude-sonnet-4-5": {"input": 3.00, "output": 15.00},
+    "claude-sonnet-4-6": {"input": 3.00, "output": 15.00},
+    "claude-3-7-sonnet": {"input": 3.00, "output": 15.00},
+    "claude-3-5-sonnet": {"input": 3.00, "output": 15.00},
+    "claude-3-5-haiku": {"input": 0.80, "output": 4.00},
+    "claude-3-haiku": {"input": 0.25, "output": 1.25},
     # Google Gemini
-    "gemini-2-5-pro":              {"input": 1.25,  "output": 10.00},
-    "gemini-2-5-flash":            {"input": 0.15,  "output": 0.60},
-    "gemini-2-0-flash-001":        {"input": 0.10,  "output": 0.40},
-    "gemini-2-0-flash":            {"input": 0.10,  "output": 0.40},
+    "gemini-2-5-pro": {"input": 1.25, "output": 10.00},
+    "gemini-2-5-flash": {"input": 0.15, "output": 0.60},
+    "gemini-2-0-flash-001": {"input": 0.10, "output": 0.40},
+    "gemini-2-0-flash": {"input": 0.10, "output": 0.40},
     # Meta Llama
-    "llama-3-3-70b-instruct":      {"input": 0.59,  "output": 0.79},
-    "llama-3-1-8b-instruct":       {"input": 0.18,  "output": 0.18},
+    "llama-3-3-70b-instruct": {"input": 0.59, "output": 0.79},
+    "llama-3-1-8b-instruct": {"input": 0.18, "output": 0.18},
     # Mistral
-    "mistral-large-2411":          {"input": 2.00,  "output": 6.00},
-    "mistral-large":               {"input": 2.00,  "output": 6.00},
-    "mistral-small":               {"input": 0.10,  "output": 0.30},
+    "mistral-large-2411": {"input": 2.00, "output": 6.00},
+    "mistral-large": {"input": 2.00, "output": 6.00},
+    "mistral-small": {"input": 0.10, "output": 0.30},
     # Microsoft Phi
-    "phi-4":                       {"input": 0.07,  "output": 0.14},
-    "phi-4-mini":                  {"input": 0.04,  "output": 0.08},
+    "phi-4": {"input": 0.07, "output": 0.14},
+    "phi-4-mini": {"input": 0.04, "output": 0.08},
     # Cohere
-    "command-r-plus":              {"input": 2.50,  "output": 10.00},
-    "command-r":                   {"input": 0.15,  "output": 0.60},
-    "kimi-k2-6":                   {"input": 0.95,  "output": 4.00},
+    "command-r-plus": {"input": 2.50, "output": 10.00},
+    "command-r": {"input": 0.15, "output": 0.60},
+    "kimi-k2-6": {"input": 0.95, "output": 4.00},
 }
 
 
 def _normalize_name(model: str) -> str:
     """Strip provider prefixes and normalise separators to '-'."""
     name = model
-    for prefix in ("copilot/Azure/", "copilot/", "openai/", "anthropic/", "google/", "meta/",
-                   "mistral-ai/", "microsoft/", "cohere/"):
+    for prefix in (
+        "copilot/Azure/",
+        "copilot/",
+        "openai/",
+        "anthropic/",
+        "google/",
+        "meta/",
+        "mistral-ai/",
+        "microsoft/",
+        "cohere/",
+    ):
         name = name.removeprefix(prefix)
     # normalise '.', '_' → '-' and lowercase
     return name.replace(".", "-").replace("_", "-").lower()
@@ -130,7 +140,7 @@ def estimate_cost(
     for node, usage in token_usage.items():
         model = models_by_role.get(node, "")
         price = _find_price(model, prices) if model else None
-        in_tok  = usage.get("input_tokens",  0) or 0
+        in_tok = usage.get("input_tokens", 0) or 0
         out_tok = usage.get("output_tokens", 0) or 0
         if price:
             node_usd = (in_tok * price["input"] + out_tok * price["output"]) / 1_000_000
@@ -138,17 +148,17 @@ def estimate_cost(
         else:
             node_usd = None
         by_node[node] = {
-            "model":         model,
-            "input_tokens":  in_tok,
+            "model": model,
+            "input_tokens": in_tok,
             "output_tokens": out_tok,
-            "total_tokens":  usage.get("total_tokens", in_tok + out_tok),
+            "total_tokens": usage.get("total_tokens", in_tok + out_tok),
             "estimated_usd": round(node_usd, 6) if node_usd is not None else None,
         }
         if node_usd is not None:
             total_usd += node_usd
 
     return {
-        "by_node":    by_node,
-        "total_usd":  round(total_usd, 6) if has_prices else None,
+        "by_node": by_node,
+        "total_usd": round(total_usd, 6) if has_prices else None,
         "has_prices": has_prices,
     }

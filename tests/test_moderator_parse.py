@@ -30,16 +30,18 @@ class _FakeMsg:
 
 def test_parsed_valid_passthrough() -> None:
     decision = ModeratorDecision.model_validate_json(_DECISION_JSON)
-    result = {"raw": _FakeMsg("x", {"input_tokens": 10, "output_tokens": 5, "total_tokens": 15}),
-              "parsed": decision, "parsing_error": None}
+    result = {
+        "raw": _FakeMsg("x", {"input_tokens": 10, "output_tokens": 5, "total_tokens": 15}),
+        "parsed": decision,
+        "parsing_error": None,
+    }
     out, usage = _decision_from_structured_result(result)
     assert out is decision
     assert usage == {"input_tokens": 10, "output_tokens": 5, "total_tokens": 15}
 
 
 def test_fenced_raw_rescued_without_reinvoke() -> None:
-    raw = _FakeMsg(f"```json\n{_DECISION_JSON}\n```",
-                   {"input_tokens": 100, "output_tokens": 50, "total_tokens": 150})
+    raw = _FakeMsg(f"```json\n{_DECISION_JSON}\n```", {"input_tokens": 100, "output_tokens": 50, "total_tokens": 150})
     result = {"raw": raw, "parsed": None, "parsing_error": Exception("json_invalid")}
     out, usage = _decision_from_structured_result(result)
     assert out is not None

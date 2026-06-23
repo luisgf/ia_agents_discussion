@@ -122,9 +122,17 @@ def _run_skeptic(monkeypatch, content: str, hypotheses: list[Hypothesis]) -> dic
     monkeypatch.setattr(g, "_run_with_tools", lambda *a, **k: (content, [], {}))
     monkeypatch.setattr(g, "_template_for", lambda state: type("T", (), {"skeptic_system": "sys"})())
     state = {
-        "topic": "t", "context": "", "diagnostic_response": "d", "history": [],
-        "hypotheses": hypotheses, "round": 2, "skeptic_model": "m",
-        "language": "es", "run_id": "", "compress_history": False, "history_summary": "",
+        "topic": "t",
+        "context": "",
+        "diagnostic_response": "d",
+        "history": [],
+        "hypotheses": hypotheses,
+        "round": 2,
+        "skeptic_model": "m",
+        "language": "es",
+        "run_id": "",
+        "compress_history": False,
+        "history_summary": "",
     }
     return skeptic_agent(state)
 
@@ -159,8 +167,9 @@ def test_merge_transition_dedup_still_works() -> None:
     base = _hyp()
     rejected = base.model_copy(deep=True)
     rejected.state = "rejected"
-    rejected.transitions = rejected.transitions + [HypothesisTransition(
-        round=1, from_state="active", to_state="rejected", agent="skeptic_agent", note="x")]
+    rejected.transitions = rejected.transitions + [
+        HypothesisTransition(round=1, from_state="active", to_state="rejected", agent="skeptic_agent", note="x")
+    ]
     merged = _merge_hypotheses([base], [rejected])
     merged = _merge_hypotheses(merged, [rejected])
     assert len(merged) == 1

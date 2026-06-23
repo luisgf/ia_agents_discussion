@@ -156,7 +156,8 @@ FLOW_SCHEMA = """  "flow_directive": {
     "rationale": "<why this flow was chosen>"
   }"""
 
-MODERATOR_JSON_SCHEMA = """{
+MODERATOR_JSON_SCHEMA = (
+    """{
   "status": "<continue|final_diagnosis|needs_more_data|propose_fix|structured_uncertainty>",
   "confidence": <0.0-1.0>,
   "leading_hypothesis": "<most likely technical cause or empty>",
@@ -168,8 +169,11 @@ MODERATOR_JSON_SCHEMA = """{
   "risk_level": "<low|medium|high>",
   "validation": ["<how to verify the diagnosis or fix>"],
   "stop_reason": "<closure reason or null>",
-""" + FLOW_SCHEMA + """
+"""
+    + FLOW_SCHEMA
+    + """
 }"""
+)
 
 
 def _labels(language: str) -> dict:
@@ -192,9 +196,7 @@ def format_history(
         if history:
             lines.append("")
             lines.append(_labels(language)["last_round"])
-            lines.append(
-                "\n\n".join(f"[{item.role}]\n{item.content}" for item in history)
-            )
+            lines.append("\n\n".join(f"[{item.role}]\n{item.content}" for item in history))
         return "\n".join(lines)
     if not history:
         return _labels(language)["no_history"]

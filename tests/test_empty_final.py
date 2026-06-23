@@ -53,15 +53,22 @@ _TOOL_CALL = {"name": "fake_probe", "args": {"x": 1}, "id": "tc1"}
 
 def test_empty_final_recovered_by_nudge(monkeypatch) -> None:
     tool = _FakeTool()
-    model = _FakeModel([
-        _FakeResponse("", tool_calls=[_TOOL_CALL]),
-        _FakeResponse(""),                 # final vacío → nudge
-        _FakeResponse("INFORME FINAL"),    # respuesta al nudge
-    ])
+    model = _FakeModel(
+        [
+            _FakeResponse("", tool_calls=[_TOOL_CALL]),
+            _FakeResponse(""),  # final vacío → nudge
+            _FakeResponse("INFORME FINAL"),  # respuesta al nudge
+        ]
+    )
     _patch(monkeypatch, tool)
 
     content, tool_log, usage = g._run_with_tools(
-        lambda: model, "diagnostic_agent", "sys", "user", run_id="", round_number=1,
+        lambda: model,
+        "diagnostic_agent",
+        "sys",
+        "user",
+        run_id="",
+        round_number=1,
     )
 
     assert content == "INFORME FINAL"
@@ -72,15 +79,22 @@ def test_empty_final_recovered_by_nudge(monkeypatch) -> None:
 
 def test_empty_after_nudge_yields_placeholder(monkeypatch) -> None:
     tool = _FakeTool()
-    model = _FakeModel([
-        _FakeResponse("", tool_calls=[_TOOL_CALL]),
-        _FakeResponse(""),
-        _FakeResponse("   "),  # también vacío tras el nudge
-    ])
+    model = _FakeModel(
+        [
+            _FakeResponse("", tool_calls=[_TOOL_CALL]),
+            _FakeResponse(""),
+            _FakeResponse("   "),  # también vacío tras el nudge
+        ]
+    )
     _patch(monkeypatch, tool)
 
     content, _, _ = g._run_with_tools(
-        lambda: model, "diagnostic_agent", "sys", "user", run_id="", round_number=1,
+        lambda: model,
+        "diagnostic_agent",
+        "sys",
+        "user",
+        run_id="",
+        round_number=1,
     )
 
     assert content == "(El agente no entregó respuesta final tras 1 llamadas a herramientas.)"
@@ -88,14 +102,21 @@ def test_empty_after_nudge_yields_placeholder(monkeypatch) -> None:
 
 def test_normal_final_no_extra_invocation(monkeypatch) -> None:
     tool = _FakeTool()
-    model = _FakeModel([
-        _FakeResponse("", tool_calls=[_TOOL_CALL]),
-        _FakeResponse("respuesta normal"),
-    ])
+    model = _FakeModel(
+        [
+            _FakeResponse("", tool_calls=[_TOOL_CALL]),
+            _FakeResponse("respuesta normal"),
+        ]
+    )
     _patch(monkeypatch, tool)
 
     content, _, _ = g._run_with_tools(
-        lambda: model, "diagnostic_agent", "sys", "user", run_id="", round_number=1,
+        lambda: model,
+        "diagnostic_agent",
+        "sys",
+        "user",
+        run_id="",
+        round_number=1,
     )
 
     assert content == "respuesta normal"
@@ -104,15 +125,22 @@ def test_normal_final_no_extra_invocation(monkeypatch) -> None:
 
 def test_nudge_usage_accumulated(monkeypatch) -> None:
     tool = _FakeTool()
-    model = _FakeModel([
-        _FakeResponse("", tool_calls=[_TOOL_CALL]),
-        _FakeResponse(""),
-        _FakeResponse("INFORME"),
-    ])
+    model = _FakeModel(
+        [
+            _FakeResponse("", tool_calls=[_TOOL_CALL]),
+            _FakeResponse(""),
+            _FakeResponse("INFORME"),
+        ]
+    )
     _patch(monkeypatch, tool)
 
     _, _, usage = g._run_with_tools(
-        lambda: model, "diagnostic_agent", "sys", "user", run_id="", round_number=1,
+        lambda: model,
+        "diagnostic_agent",
+        "sys",
+        "user",
+        run_id="",
+        round_number=1,
     )
 
     # 3 llamadas LLM × 15 tokens del stub

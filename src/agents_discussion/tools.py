@@ -21,6 +21,7 @@ ELASTICSEARCH_URL, DATABASE_URL.
 Tools listed in APPROVAL_REQUIRED_TOOLS (settings) need operator approval
 when the run was started from the web UI with approval gating enabled.
 """
+
 from __future__ import annotations
 
 import getpass
@@ -417,8 +418,16 @@ def query_elasticsearch(
 # ── kubectl (read-only) ─────────────────────────────────────────────────────
 
 _KUBECTL_READONLY_VERBS = {
-    "get", "describe", "logs", "top", "events",
-    "explain", "version", "api-resources", "cluster-info", "config",
+    "get",
+    "describe",
+    "logs",
+    "top",
+    "events",
+    "explain",
+    "version",
+    "api-resources",
+    "cluster-info",
+    "config",
 }
 
 
@@ -508,8 +517,7 @@ def git_recent_changes(repo_path: str, count: int = 10, timeout: int = 15) -> st
         return f"Error: '{repo_path}' is not a directory."
     count = max(1, min(count, 50))
     return _run_argv(
-        ["git", "-C", path, "log", f"-{count}", "--date=iso", "--stat",
-         "--pretty=format:%h %ad %an: %s"],
+        ["git", "-C", path, "log", f"-{count}", "--date=iso", "--stat", "--pretty=format:%h %ad %an: %s"],
         timeout,
     )
 

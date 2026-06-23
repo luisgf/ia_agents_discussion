@@ -45,6 +45,7 @@ STATIC_DIR = Path(__file__).parent / "static"
 
 # ── Run persistence ────────────────────────────────────────────────────────────
 
+
 class RunStore:
     """One JSON file per run.  Stub written on creation, completed on finish."""
 
@@ -70,9 +71,7 @@ class RunStore:
     def create_stub(self, meta: dict) -> None:
         """Write stub so the run appears in the history list immediately."""
         stub = {**meta, "events": []}
-        self._path(meta["run_id"]).write_text(
-            json.dumps(stub, ensure_ascii=False, indent=2), encoding="utf-8"
-        )
+        self._path(meta["run_id"]).write_text(json.dumps(stub, ensure_ascii=False, indent=2), encoding="utf-8")
 
     def save(self, run_id: str, data: dict) -> None:
         """Atomically write the complete run record (temp-file + rename)."""
@@ -92,9 +91,20 @@ class RunStore:
 
     def list_runs(self) -> list[dict]:
         """Return run metadata (no context/events) sorted newest-first."""
-        keys = ("run_id", "topic", "timestamp", "finished_at", "duration_seconds",
-                "status", "models", "template", "language", "parent_run_id",
-                "token_totals", "cost_estimate")
+        keys = (
+            "run_id",
+            "topic",
+            "timestamp",
+            "finished_at",
+            "duration_seconds",
+            "status",
+            "models",
+            "template",
+            "language",
+            "parent_run_id",
+            "token_totals",
+            "cost_estimate",
+        )
         runs = []
         for p in self.data_dir.glob("*.json"):
             try:
@@ -204,9 +214,9 @@ def _run_debate_sync(session: RunSession) -> None:
             run_id=session.run_id,
             template=session.meta.get("template", ""),
             language=session.meta.get("language", ""),
-            initial_history=_history_from_events(
-                (store.get(session.meta["parent_run_id"]) or {}).get("events", [])
-            ) if session.meta.get("parent_run_id") else None,
+            initial_history=_history_from_events((store.get(session.meta["parent_run_id"]) or {}).get("events", []))
+            if session.meta.get("parent_run_id")
+            else None,
             diagnostic_reasoning_effort=efforts.get("diagnostic", ""),
             skeptic_reasoning_effort=efforts.get("skeptic", ""),
             moderator_reasoning_effort=efforts.get("moderator", ""),
@@ -285,11 +295,13 @@ def _start_run(meta: dict, context: str, *, pause_between_rounds: bool, require_
     SESSIONS[meta["run_id"]] = session
     store.create_stub({**meta, "status": "running", "context": context})
     if meta.get("parent_run_id"):
-        session.publish({
-            "type": "run_resumed",
-            "parent_run_id": meta["parent_run_id"],
-            "parent_topic": meta.get("parent_topic", ""),
-        })
+        session.publish(
+            {
+                "type": "run_resumed",
+                "parent_run_id": meta["parent_run_id"],
+                "parent_topic": meta.get("parent_topic", ""),
+            }
+        )
     asyncio.get_running_loop().create_task(_drive_run(session))
     return session
 
@@ -302,6 +314,7 @@ def _parse_optional_bool(value: str, default: bool) -> bool:
 
 # ── Routes ────────────────────────────────────────────────────────────────────
 
+
 @app.get("/")
 def index() -> FileResponse:
     return FileResponse(STATIC_DIR / "index.html")
@@ -311,22 +324,24 @@ def index() -> FileResponse:
 async def settings_api() -> JSONResponse:
     try:
         s = get_settings()
-        return JSONResponse({
-            "diagnostic_model":      s.diagnostic_model,
-            "skeptic_model":         s.skeptic_model,
-            "moderator_model":       s.moderator_model,
-            "summary_model":         s.summary_model,
-            "diagnostic_reasoning_effort": s.diagnostic_reasoning_effort,
-            "skeptic_reasoning_effort":    s.skeptic_reasoning_effort,
-            "moderator_reasoning_effort":  s.moderator_reasoning_effort,
-            "max_rounds":            s.max_rounds,
-            "confidence_threshold":  s.confidence_threshold,
-            "early_out_threshold":   s.early_out_threshold,
-            "prompt_template":       s.prompt_template,
-            "prompt_language":       s.prompt_language,
-            "tool_approval_required": s.tool_approval_required,
-            "compress_history":      s.compress_history,
-        })
+        return JSONResponse(
+            {
+                "diagnostic_model": s.diagnostic_model,
+                "skeptic_model": s.skeptic_model,
+                "moderator_model": s.moderator_model,
+                "summary_model": s.summary_model,
+                "diagnostic_reasoning_effort": s.diagnostic_reasoning_effort,
+                "skeptic_reasoning_effort": s.skeptic_reasoning_effort,
+                "moderator_reasoning_effort": s.moderator_reasoning_effort,
+                "max_rounds": s.max_rounds,
+                "confidence_threshold": s.confidence_threshold,
+                "early_out_threshold": s.early_out_threshold,
+                "prompt_template": s.prompt_template,
+                "prompt_language": s.prompt_language,
+                "tool_approval_required": s.tool_approval_required,
+                "compress_history": s.compress_history,
+            }
+        )
     except Exception as exc:  # noqa: BLE001
         return JSONResponse({"error": str(exc)}, status_code=500)
 
@@ -345,12 +360,12 @@ _models_cache_ts: float = 0.0
 _MODELS_TTL = 300.0  # 5 minutes
 
 _COPILOT_FALLBACK: list[dict] = [
-    {"id": "copilot/gpt-4o",             "name": "GPT-4o",             "provider": "copilot"},
-    {"id": "copilot/gpt-4.1",            "name": "GPT-4.1",            "provider": "copilot"},
-    {"id": "copilot/gpt-4o-mini",        "name": "GPT-4o mini",        "provider": "copilot"},
-    {"id": "copilot/claude-sonnet-4.6",  "name": "Claude Sonnet 4.6",  "provider": "copilot"},
-    {"id": "copilot/claude-haiku-4.5",   "name": "Claude Haiku 4.5",   "provider": "copilot"},
-    {"id": "copilot/gemini-3.5-flash",   "name": "Gemini 3.5 Flash",   "provider": "copilot"},
+    {"id": "copilot/gpt-4o", "name": "GPT-4o", "provider": "copilot"},
+    {"id": "copilot/gpt-4.1", "name": "GPT-4.1", "provider": "copilot"},
+    {"id": "copilot/gpt-4o-mini", "name": "GPT-4o mini", "provider": "copilot"},
+    {"id": "copilot/claude-sonnet-4.6", "name": "Claude Sonnet 4.6", "provider": "copilot"},
+    {"id": "copilot/claude-haiku-4.5", "name": "Claude Haiku 4.5", "provider": "copilot"},
+    {"id": "copilot/gemini-3.5-flash", "name": "Gemini 3.5 Flash", "provider": "copilot"},
     {"id": "copilot/gemini-3.1-pro-preview", "name": "Gemini 3.1 Pro Preview", "provider": "copilot"},
 ]
 
@@ -373,11 +388,13 @@ async def _fetch_models() -> list[dict]:
                     for m in r.json().get("data", []):
                         mid = m.get("id", "")
                         if mid:
-                            result.append({
-                                "id": mid,
-                                "name": m.get("display_name") or m.get("name") or mid,
-                                "provider": "github_models",
-                            })
+                            result.append(
+                                {
+                                    "id": mid,
+                                    "name": m.get("display_name") or m.get("name") or mid,
+                                    "provider": "github_models",
+                                }
+                            )
             except Exception:  # noqa: BLE001
                 pass
 
@@ -409,11 +426,13 @@ async def _fetch_models() -> list[dict]:
                         if any(skip in mid for skip in ("embedding", "trajectory-compaction")):
                             continue
                         full_id = mid if mid.startswith("copilot/") else f"copilot/{mid}"
-                        copilot_models.append({
-                            "id": full_id,
-                            "name": m.get("name") or m.get("display_name") or mid,
-                            "provider": "copilot",
-                        })
+                        copilot_models.append(
+                            {
+                                "id": full_id,
+                                "name": m.get("name") or m.get("display_name") or mid,
+                                "provider": "copilot",
+                            }
+                        )
                     result.extend(copilot_models if copilot_models else _COPILOT_FALLBACK)
                 else:
                     result.extend(_COPILOT_FALLBACK)
@@ -423,7 +442,7 @@ async def _fetch_models() -> list[dict]:
     if not result:
         result = [
             {"id": "openai/gpt-4.1", "name": "GPT-4.1 (GitHub Models)", "provider": "github_models"},
-            {"id": "openai/gpt-4o",  "name": "GPT-4o (GitHub Models)",  "provider": "github_models"},
+            {"id": "openai/gpt-4o", "name": "GPT-4o (GitHub Models)", "provider": "github_models"},
             *_COPILOT_FALLBACK,
         ]
     return result
@@ -454,6 +473,7 @@ async def refresh_models_api() -> JSONResponse:
 
 # ── Run lifecycle ─────────────────────────────────────────────────────────────
 
+
 @app.get("/api/runs")
 async def list_runs_api() -> JSONResponse:
     runs = store.list_runs()
@@ -469,15 +489,15 @@ async def list_runs_api() -> JSONResponse:
 async def create_run(
     topic: Annotated[str, Form()],
     diagnostic_model: Annotated[str, Form()] = "",
-    skeptic_model:    Annotated[str, Form()] = "",
-    moderator_model:  Annotated[str, Form()] = "",
+    skeptic_model: Annotated[str, Form()] = "",
+    moderator_model: Annotated[str, Form()] = "",
     diagnostic_reasoning_effort: Annotated[str, Form()] = "",
-    skeptic_reasoning_effort:    Annotated[str, Form()] = "",
-    moderator_reasoning_effort:  Annotated[str, Form()] = "",
-    template:         Annotated[str, Form()] = "",
-    language:         Annotated[str, Form()] = "",
+    skeptic_reasoning_effort: Annotated[str, Form()] = "",
+    moderator_reasoning_effort: Annotated[str, Form()] = "",
+    template: Annotated[str, Form()] = "",
+    language: Annotated[str, Form()] = "",
     pause_between_rounds: Annotated[str, Form()] = "",
-    require_approval:     Annotated[str, Form()] = "",
+    require_approval: Annotated[str, Form()] = "",
     project_path: Annotated[str, Form()] = "",
     include_patterns: Annotated[str, Form()] = "",
     max_files: Annotated[int, Form()] = 20,
@@ -511,21 +531,21 @@ async def create_run(
     context = _append_ssh_defaults(context, ssh_host, ssh_user, ssh_port, ssh_key_path)
 
     meta = {
-        "run_id":    uuid.uuid4().hex,
-        "topic":     topic,
+        "run_id": uuid.uuid4().hex,
+        "topic": topic,
         "timestamp": datetime.now(timezone.utc).isoformat(),
         "models": {
             "diagnostic": diagnostic_model or settings.diagnostic_model,
-            "skeptic":    skeptic_model    or settings.skeptic_model,
-            "moderator":  moderator_model  or settings.moderator_model,
+            "skeptic": skeptic_model or settings.skeptic_model,
+            "moderator": moderator_model or settings.moderator_model,
         },
         "reasoning_effort": {
             "diagnostic": diagnostic_reasoning_effort or settings.diagnostic_reasoning_effort,
-            "skeptic":    skeptic_reasoning_effort    or settings.skeptic_reasoning_effort,
-            "moderator":  moderator_reasoning_effort  or settings.moderator_reasoning_effort,
+            "skeptic": skeptic_reasoning_effort or settings.skeptic_reasoning_effort,
+            "moderator": moderator_reasoning_effort or settings.moderator_reasoning_effort,
         },
-        "template":      template or settings.prompt_template,
-        "language":      language or settings.prompt_language,
+        "template": template or settings.prompt_template,
+        "language": language or settings.prompt_language,
         "parent_run_id": None,
     }
     _start_run(
@@ -543,7 +563,7 @@ async def resume_run(
     new_evidence: Annotated[str, Form()] = "",
     evidence_file: Annotated[list[UploadFile] | None, File()] = None,
     pause_between_rounds: Annotated[str, Form()] = "",
-    require_approval:     Annotated[str, Form()] = "",
+    require_approval: Annotated[str, Form()] = "",
 ) -> JSONResponse:
     if run_id in SESSIONS:
         return JSONResponse({"detail": "El debate todavía está en curso."}, status_code=409)
@@ -564,27 +584,24 @@ async def resume_run(
         for index, upload in enumerate(evidence_file or []):
             if not upload.filename:
                 continue
-            saved = await _save_upload(
-                upload, Path(tmp_dir) / f"evidence-{index}-{Path(upload.filename).name}"
-            )
+            saved = await _save_upload(upload, Path(tmp_dir) / f"evidence-{index}-{Path(upload.filename).name}")
             extra_parts.append(read_context_file(saved, "Additional Evidence File", True))
 
     context = parent.get("context", "")
     context = (context + "\n\n" if context else "") + (
-        "=== Evidencia adicional aportada al reanudar el debate ===\n"
-        + "\n\n".join(extra_parts)
+        "=== Evidencia adicional aportada al reanudar el debate ===\n" + "\n\n".join(extra_parts)
     )
 
     meta = {
-        "run_id":        uuid.uuid4().hex,
-        "topic":         parent.get("topic", ""),
-        "timestamp":     datetime.now(timezone.utc).isoformat(),
-        "models":        parent.get("models") or {},
+        "run_id": uuid.uuid4().hex,
+        "topic": parent.get("topic", ""),
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "models": parent.get("models") or {},
         "reasoning_effort": parent.get("reasoning_effort") or {},
-        "template":      parent.get("template", ""),
-        "language":      parent.get("language", ""),
+        "template": parent.get("template", ""),
+        "language": parent.get("language", ""),
         "parent_run_id": run_id,
-        "parent_topic":  parent.get("topic", ""),
+        "parent_topic": parent.get("topic", ""),
     }
     _start_run(
         meta,
@@ -602,12 +619,8 @@ async def run_events(run_id: str) -> StreamingResponse:
         # Finished run: replay stored events once and close.
         data = store.get(run_id)
         if data is None:
-            return StreamingResponse(
-                _single_error_event("Run not found."), media_type="text/event-stream"
-            )
-        return StreamingResponse(
-            _replay_stream(data), media_type="text/event-stream"
-        )
+            return StreamingResponse(_single_error_event("Run not found."), media_type="text/event-stream")
+        return StreamingResponse(_replay_stream(data), media_type="text/event-stream")
     return StreamingResponse(_live_stream(session), media_type="text/event-stream")
 
 
@@ -696,11 +709,13 @@ async def update_run_options_api(run_id: str, body: OptionsBody) -> JSONResponse
         control.set_require_approval(body.require_approval)
     if body.pause_between_rounds is not None:
         control.set_pause_between_rounds(body.pause_between_rounds)
-    return JSONResponse({
-        "status": "ok",
-        "require_approval": control.require_approval,
-        "pause_between_rounds": control.pause_between_rounds,
-    })
+    return JSONResponse(
+        {
+            "status": "ok",
+            "require_approval": control.require_approval,
+            "pause_between_rounds": control.pause_between_rounds,
+        }
+    )
 
 
 class CommentBody(BaseModel):
@@ -731,6 +746,7 @@ async def delete_run_api(run_id: str) -> JSONResponse:
 
 
 # ── Internal helpers ──────────────────────────────────────────────────────────
+
 
 async def _build_context(
     incident_file: UploadFile | None,

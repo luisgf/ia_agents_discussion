@@ -7,8 +7,6 @@ import re
 import time
 import uuid
 
-_log = logging.getLogger(__name__)
-
 from langchain_core.messages import HumanMessage, SystemMessage, ToolMessage
 from langgraph.graph import END, START, StateGraph
 
@@ -29,7 +27,6 @@ from agents_discussion.state import (
     DebateMessage,
     DebateRound,
     DebateState,
-    FlowDirective,
     Hypothesis,
     HypothesisTransition,
     ModeratorDecision,
@@ -37,6 +34,8 @@ from agents_discussion.state import (
     _merge_hypotheses,
 )
 from agents_discussion.tools import get_tools
+
+_log = logging.getLogger(__name__)
 
 
 AGENT_EVENT_FIELDS = {
@@ -82,13 +81,15 @@ def _resolve_effort(state: DebateState, effort_key: str, model: str, agent_node:
         return effort
     control = get_control(state.get("run_id", ""))
     if control is not None and control.warn_once(f"effort:{agent_node}"):
-        control.emit({
-            "type": "reasoning_effort_ignored",
-            "agent_node": agent_node,
-            "agent_role": agent_role,
-            "model": model,
-            "requested_effort": effort,
-        })
+        control.emit(
+            {
+                "type": "reasoning_effort_ignored",
+                "agent_node": agent_node,
+                "agent_role": agent_role,
+                "model": model,
+                "requested_effort": effort,
+            }
+        )
     return None
 
 
@@ -103,11 +104,13 @@ def _invoke_streaming(model, messages: list, control, agent_node: str, agent_rol
     if control is None:
         return model.invoke(messages)
 
-    control.emit({
-        "type": "agent_turn_started",
-        "agent_node": agent_node,
-        "agent_role": agent_role,
-    })
+    control.emit(
+        {
+            "type": "agent_turn_started",
+            "agent_node": agent_node,
+            "agent_role": agent_role,
+        }
+    )
     response = None
     try:
         for chunk in model.stream(messages, stream_usage=True):
@@ -115,12 +118,14 @@ def _invoke_streaming(model, messages: list, control, agent_node: str, agent_rol
             response = chunk if response is None else response + chunk
             delta = _chunk_text(chunk.content)
             if delta:
-                control.emit({
-                    "type": "agent_delta",
-                    "agent_node": agent_node,
-                    "agent_role": agent_role,
-                    "delta": delta,
-                })
+                control.emit(
+                    {
+                        "type": "agent_delta",
+                        "agent_node": agent_node,
+                        "agent_role": agent_role,
+                        "delta": delta,
+                    }
+                )
     except RunCancelled:
         raise
     except Exception:
@@ -196,8 +201,11 @@ def _parse_probability(raw: str | None) -> float | None:
 
 def _creation_transition(proposer: str, round_number: int) -> HypothesisTransition:
     return HypothesisTransition(
-        round=round_number, from_state=None, to_state="active",
-        agent=proposer, note="Hipótesis propuesta",
+        round=round_number,
+        from_state=None,
+        to_state="active",
+        agent=proposer,
+        note="Hipótesis propuesta",
     )
 
 
@@ -212,29 +220,33 @@ def _extract_hypotheses(text: str, proposer: str, round_number: int) -> list[Hyp
         # fixed "H-1" would falsely merge unrelated fallbacks across rounds.
         first_para = text.split("\n\n")[0] if text else ""
         if first_para:
-            hypotheses.append(Hypothesis(
-                id=f"R{round_number}-F1",
-                text=first_para.strip(),
-                state="active",
-                proposer=proposer,
-                round=round_number,
-                transitions=[_creation_transition(proposer, round_number)],
-            ))
+            hypotheses.append(
+                Hypothesis(
+                    id=f"R{round_number}-F1",
+                    text=first_para.strip(),
+                    state="active",
+                    proposer=proposer,
+                    round=round_number,
+                    transitions=[_creation_transition(proposer, round_number)],
+                )
+            )
         return hypotheses
 
     for match in matches:
         hyp_id = match.group(1).strip()
         hyp_text, evidence = _split_hypothesis_block(match.group(3))
-        hypotheses.append(Hypothesis(
-            id=hyp_id,
-            text=hyp_text,
-            state="active",
-            proposer=proposer,
-            round=round_number,
-            probability=_parse_probability(match.group(2)),
-            supporting_evidence=evidence,
-            transitions=[_creation_transition(proposer, round_number)],
-        ))
+        hypotheses.append(
+            Hypothesis(
+                id=hyp_id,
+                text=hyp_text,
+                state="active",
+                proposer=proposer,
+                round=round_number,
+                probability=_parse_probability(match.group(2)),
+                supporting_evidence=evidence,
+                transitions=[_creation_transition(proposer, round_number)],
+            )
+        )
     return hypotheses
 
 
@@ -262,7 +274,7 @@ def _last_round_messages(history: list[DebateMessage], current_round: int) -> li
         if msg.role == "moderator":
             mod_count += 1
             if mod_count == current_round - 1:
-                return history[i + 1:]
+                return history[i + 1 :]
     # No previous moderator found → round 1 → entire history
     return history
 
@@ -286,7 +298,7 @@ def _history_before_current_round(history: list[DebateMessage], current_round: i
         if msg.role == "moderator":
             mod_count += 1
             if mod_count == current_round - 1:
-                return history[:i + 1] + [m for m in history[i + 1:] if m.role == "user"]
+                return history[: i + 1] + [m for m in history[i + 1 :] if m.role == "user"]
     # Round 1 (or resume preamble without moderator messages): drop only the
     # current round's agent messages.
     return [m for m in history if m.role not in _AGENT_HISTORY_ROLES]
@@ -296,11 +308,12 @@ def _messages_after_last_moderator(history: list[DebateMessage]) -> list[DebateM
     """Messages of the round in progress (everything after the last moderator decision)."""
     for i in range(len(history) - 1, -1, -1):
         if history[i].role == "moderator":
-            return history[i + 1:]
+            return history[i + 1 :]
     return list(history)
 
 
 # ── ReAct loop (unchanged core) ─────────────────────────────────────────────
+
 
 def _run_with_tools(
     model_factory,
@@ -349,9 +362,9 @@ def _run_with_tools(
 
         # Accumulate usage from this LLM call
         usage_meta = getattr(response, "usage_metadata", None) or {}
-        total_input  += usage_meta.get("input_tokens",  0) or 0
+        total_input += usage_meta.get("input_tokens", 0) or 0
         total_output += usage_meta.get("output_tokens", 0) or 0
-        total_tokens += usage_meta.get("total_tokens",  0) or 0
+        total_tokens += usage_meta.get("total_tokens", 0) or 0
 
         raw_calls = getattr(response, "tool_calls", None) or []
         if not raw_calls:
@@ -359,19 +372,19 @@ def _run_with_tools(
 
         reasoning_text = _message_content(response)
         if control is not None and reasoning_text.strip():
-            control.emit({
-                "type": "agent_reasoning",
-                "agent_node": agent_node,
-                "agent_role": agent_role,
-                "content": reasoning_text,
-            })
+            control.emit(
+                {
+                    "type": "agent_reasoning",
+                    "agent_node": agent_node,
+                    "agent_role": agent_role,
+                    "content": reasoning_text,
+                }
+            )
 
         batch_had_error = False
         for tc in raw_calls:
             if call_count >= settings.max_tool_calls_per_agent:
-                messages.append(
-                    ToolMessage(content="Tool call limit reached.", tool_call_id=tc["id"])
-                )
+                messages.append(ToolMessage(content="Tool call limit reached.", tool_call_id=tc["id"]))
                 continue
             call_count += 1
 
@@ -384,14 +397,16 @@ def _run_with_tools(
             def _execute(tool_fn) -> tuple[str, bool]:
                 nonlocal duration_ms
                 if control is not None:
-                    control.emit({
-                        "type": "tool_call_started",
-                        "call_id": exec_id,
-                        "agent_node": agent_node,
-                        "agent_role": agent_role,
-                        "tool_name": tool_name,
-                        "args": tool_args,
-                    })
+                    control.emit(
+                        {
+                            "type": "tool_call_started",
+                            "call_id": exec_id,
+                            "agent_node": agent_node,
+                            "agent_role": agent_role,
+                            "tool_name": tool_name,
+                            "args": tool_args,
+                        }
+                    )
                 started = time.monotonic()
                 try:
                     return str(tool_fn.invoke(tool_args)), False
@@ -410,8 +425,7 @@ def _run_with_tools(
                 # Same command already approved and executed this round: serve the
                 # stored output without re-executing or re-asking for approval.
                 result = (
-                    f"[cached: ya ejecutado por {cache_hit.agent_role} en ronda {cache_hit.round}]\n"
-                    f"{cache_hit.result}"
+                    f"[cached: ya ejecutado por {cache_hit.agent_role} en ronda {cache_hit.round}]\n{cache_hit.result}"
                 )
                 error = False
                 approval = "cached"
@@ -445,19 +459,21 @@ def _run_with_tools(
             )
             tool_log.append(entry)
             if control is not None:
-                control.emit({
-                    "type": "tool_call",
-                    "call_id": exec_id,
-                    "agent_node": agent_node,
-                    "agent_role": agent_role,
-                    "tool_name": tool_name,
-                    "args": tool_args,
-                    "result": result,
-                    "error": error,
-                    "approval": approval,
-                    "cached": approval == "cached",
-                    "duration_ms": duration_ms,
-                })
+                control.emit(
+                    {
+                        "type": "tool_call",
+                        "call_id": exec_id,
+                        "agent_node": agent_node,
+                        "agent_role": agent_role,
+                        "tool_name": tool_name,
+                        "args": tool_args,
+                        "result": result,
+                        "error": error,
+                        "approval": approval,
+                        "cached": approval == "cached",
+                        "duration_ms": duration_ms,
+                    }
+                )
             messages.append(ToolMessage(content=result, tool_call_id=call_id))
             if error:
                 batch_had_error = True
@@ -496,18 +512,18 @@ def _run_with_tools(
         )
         response = _invoke_streaming(model, messages, control, agent_node, agent_role)
         usage_meta = getattr(response, "usage_metadata", None) or {}
-        total_input  += usage_meta.get("input_tokens",  0) or 0
+        total_input += usage_meta.get("input_tokens", 0) or 0
         total_output += usage_meta.get("output_tokens", 0) or 0
-        total_tokens += usage_meta.get("total_tokens",  0) or 0
+        total_tokens += usage_meta.get("total_tokens", 0) or 0
         content = _message_content(response)
 
     if not content.strip():
         content = f"(El agente no entregó respuesta final tras {call_count} llamadas a herramientas.)"
 
     node_usage = {
-        "input_tokens":  total_input,
+        "input_tokens": total_input,
         "output_tokens": total_output,
-        "total_tokens":  total_tokens if total_tokens else (total_input + total_output),
+        "total_tokens": total_tokens if total_tokens else (total_input + total_output),
     }
     return content, tool_log, node_usage
 
@@ -556,8 +572,11 @@ def _prompt_history(
 def diagnostic_agent(state: DebateState) -> dict[str, object]:
     template = _template_for(state)
     effort = _resolve_effort(
-        state, "diagnostic_reasoning_effort", state["diagnostic_model"],
-        "diagnostic_agent", "Diagnóstico Principal",
+        state,
+        "diagnostic_reasoning_effort",
+        state["diagnostic_model"],
+        "diagnostic_agent",
+        "Diagnóstico Principal",
     )
     prompt_history, history_summary, mode = _prompt_history(state, exclude_current_round=False)
     content, tool_log, usage = _run_with_tools(
@@ -565,7 +584,10 @@ def diagnostic_agent(state: DebateState) -> dict[str, object]:
         "diagnostic_agent",
         template.diagnostic_system,
         diagnostic_prompt(
-            state["topic"], state["context"], state["round"], prompt_history,
+            state["topic"],
+            state["context"],
+            state["round"],
+            prompt_history,
             hypotheses=state.get("hypotheses", []),
             language=state.get("language", "es"),
             history_summary=history_summary,
@@ -621,8 +643,11 @@ def skeptic_agent(state: DebateState) -> dict[str, object]:
 
     template = _template_for(state)
     effort = _resolve_effort(
-        state, "skeptic_reasoning_effort", state["skeptic_model"],
-        "skeptic_agent", "Revisor Escéptico",
+        state,
+        "skeptic_reasoning_effort",
+        state["skeptic_model"],
+        "skeptic_agent",
+        "Revisor Escéptico",
     )
     prompt_history, history_summary, mode = _prompt_history(state, exclude_current_round=True)
     content, tool_log, usage = _run_with_tools(
@@ -630,8 +655,11 @@ def skeptic_agent(state: DebateState) -> dict[str, object]:
         "skeptic_agent",
         template.skeptic_system,
         skeptic_prompt(
-            state["topic"], state["context"], state["diagnostic_response"],
-            state.get("hypotheses", []), prompt_history,
+            state["topic"],
+            state["context"],
+            state["diagnostic_response"],
+            state.get("hypotheses", []),
+            prompt_history,
             language=state.get("language", "es"),
             history_summary=history_summary,
             mode=mode,
@@ -650,7 +678,7 @@ def skeptic_agent(state: DebateState) -> dict[str, object]:
         idx = content.find(f"[hypothesis:{h.id}]")
         if idx == -1:
             idx = content.find(f"HYPOTHESIS-{h.id}")
-        snippet = content[idx:idx + 500] if idx >= 0 else ""
+        snippet = content[idx : idx + 500] if idx >= 0 else ""
         new_state: str | None = None
         rejected_reason: str | None = None
         if re.search(r"\brejected\b|\brechazada?\b|\binválida?\b", snippet, re.IGNORECASE):
@@ -670,11 +698,15 @@ def skeptic_agent(state: DebateState) -> dict[str, object]:
         if state_changed:
             new_h.state = new_state
             new_h.rejected_reason = rejected_reason
-            new_h.transitions = new_h.transitions + [HypothesisTransition(
-                round=state["round"], from_state=h.state, to_state=new_state,
-                agent="skeptic_agent",
-                note=rejected_reason or "Confirmada por el escéptico.",
-            )]
+            new_h.transitions = new_h.transitions + [
+                HypothesisTransition(
+                    round=state["round"],
+                    from_state=h.state,
+                    to_state=new_state,
+                    agent="skeptic_agent",
+                    note=rejected_reason or "Confirmada por el escéptico.",
+                )
+            ]
         updated_hypotheses.append(new_h)
 
     return {
@@ -696,8 +728,11 @@ def diagnostic_rebuttal_agent(state: DebateState) -> dict[str, object]:
 
     template = _template_for(state)
     effort = _resolve_effort(
-        state, "diagnostic_reasoning_effort", state["diagnostic_model"],
-        "diagnostic_rebuttal_agent", "Contrarréplica",
+        state,
+        "diagnostic_reasoning_effort",
+        state["diagnostic_model"],
+        "diagnostic_rebuttal_agent",
+        "Contrarréplica",
     )
     prompt_history, history_summary, mode = _prompt_history(state, exclude_current_round=True)
     content, tool_log, usage = _run_with_tools(
@@ -705,8 +740,11 @@ def diagnostic_rebuttal_agent(state: DebateState) -> dict[str, object]:
         "diagnostic_rebuttal_agent",
         template.diagnostic_system,
         rebuttal_prompt(
-            state["topic"], state["context"], state["diagnostic_response"],
-            state["skeptic_response"], state.get("hypotheses", []),
+            state["topic"],
+            state["context"],
+            state["diagnostic_response"],
+            state["skeptic_response"],
+            state.get("hypotheses", []),
             history=prompt_history,
             language=state.get("language", "es"),
             history_summary=history_summary,
@@ -752,7 +790,7 @@ def _parse_moderator_response(text: str) -> ModeratorDecision:
         elif ch == "}":
             depth -= 1
             if depth == 0 and start != -1:
-                candidate = cleaned[start:i + 1]
+                candidate = cleaned[start : i + 1]
                 try:
                     return ModeratorDecision.model_validate_json(candidate)
                 except Exception:
@@ -763,15 +801,15 @@ def _parse_moderator_response(text: str) -> ModeratorDecision:
     end = cleaned.rfind("}")
     if start == -1 or end == -1 or end <= start:
         raise ValueError(f"No JSON object found in moderator response: {text[:200]}")
-    return ModeratorDecision.model_validate_json(cleaned[start:end + 1])
+    return ModeratorDecision.model_validate_json(cleaned[start : end + 1])
 
 
 def _usage_from_message(msg: object) -> dict[str, int]:
     raw_usage = getattr(msg, "usage_metadata", None) or {}
     return {
-        "input_tokens":  raw_usage.get("input_tokens",  0) or 0,
+        "input_tokens": raw_usage.get("input_tokens", 0) or 0,
         "output_tokens": raw_usage.get("output_tokens", 0) or 0,
-        "total_tokens":  raw_usage.get("total_tokens",  0) or 0,
+        "total_tokens": raw_usage.get("total_tokens", 0) or 0,
     }
 
 
@@ -811,8 +849,11 @@ def moderator_agent(state: DebateState) -> dict[str, object]:
     template = _template_for(state)
     language = state.get("language", "es")
     effort = _resolve_effort(
-        state, "moderator_reasoning_effort", state["moderator_model"],
-        "moderator_agent", "Moderador",
+        state,
+        "moderator_reasoning_effort",
+        state["moderator_model"],
+        "moderator_agent",
+        "Moderador",
     )
     model = create_github_model(state["moderator_model"], temperature=0.0, reasoning_effort=effort)
 
@@ -864,9 +905,9 @@ def moderator_agent(state: DebateState) -> dict[str, object]:
         decision = _parse_moderator_response(_message_content(response))
         fallback_usage = getattr(response, "usage_metadata", None) or {}
         mod_usage = {
-            "input_tokens":  fallback_usage.get("input_tokens",  0) or 0,
+            "input_tokens": fallback_usage.get("input_tokens", 0) or 0,
             "output_tokens": fallback_usage.get("output_tokens", 0) or 0,
-            "total_tokens":  fallback_usage.get("total_tokens",  0) or 0,
+            "total_tokens": fallback_usage.get("total_tokens", 0) or 0,
         }
 
     next_round = state["round"] + 1 if decision.status == "continue" else state["round"]
@@ -895,10 +936,7 @@ def summarize_history(state: DebateState) -> dict[str, object]:
         return {}
 
     previous_summary = state.get("history_summary", "")
-    previous_block = (
-        f"Resumen acumulado de las rondas anteriores:\n{previous_summary}\n\n"
-        if previous_summary else ""
-    )
+    previous_block = f"Resumen acumulado de las rondas anteriores:\n{previous_summary}\n\n" if previous_summary else ""
     summary_prompt_text = (
         "Resume el estado de un debate de diagnóstico técnico en un párrafo "
         "conciso (máximo 400 palabras) que capture:\n"
@@ -921,9 +959,9 @@ def summarize_history(state: DebateState) -> dict[str, object]:
         summary_text = _message_content(summary_response)
         raw_usage = getattr(summary_response, "usage_metadata", None) or {}
         sum_usage = {
-            "input_tokens":  raw_usage.get("input_tokens",  0) or 0,
+            "input_tokens": raw_usage.get("input_tokens", 0) or 0,
             "output_tokens": raw_usage.get("output_tokens", 0) or 0,
-            "total_tokens":  raw_usage.get("total_tokens",  0) or 0,
+            "total_tokens": raw_usage.get("total_tokens", 0) or 0,
         }
     except Exception as exc:
         _log.warning("History summarization failed (%s), keeping full history", exc)
@@ -934,7 +972,9 @@ def summarize_history(state: DebateState) -> dict[str, object]:
         diagnostic=state.get("diagnostic_response", "")[:500],
         skeptic=state.get("skeptic_response", "")[:500],
         rebuttal=state.get("diagnostic_rebuttal", "")[:500],
-        moderator=json.loads(state["moderator_decision"].model_dump_json() if state.get("moderator_decision") else "{}"),
+        moderator=json.loads(
+            state["moderator_decision"].model_dump_json() if state.get("moderator_decision") else "{}"
+        ),
     )
 
     return {
@@ -965,9 +1005,11 @@ def finalize(state: DebateState) -> dict[str, object]:
     if decision is None:
         return {"final_result": "El debate terminó sin decisión del moderador."}
 
-    hypotheses_section = _format_list(
-        [f"{h.id} [{h.state}]: {h.text}" for h in state.get("hypotheses", [])]
-    ) if state.get("hypotheses") else "- Ninguna."
+    hypotheses_section = (
+        _format_list([f"{h.id} [{h.state}]: {h.text}" for h in state.get("hypotheses", [])])
+        if state.get("hypotheses")
+        else "- Ninguna."
+    )
 
     result = f"""
 Estado: {decision.status}
@@ -1230,8 +1272,9 @@ def stream_debate_events(
                     for k in ("input_tokens", "output_tokens", "total_tokens"):
                         accumulated_usage[role][k] = accumulated_usage[role].get(k, 0) + (counts.get(k, 0) or 0)
                 else:
-                    accumulated_usage[role] = {k: counts.get(k, 0) or 0
-                                               for k in ("input_tokens", "output_tokens", "total_tokens")}
+                    accumulated_usage[role] = {
+                        k: counts.get(k, 0) or 0 for k in ("input_tokens", "output_tokens", "total_tokens")
+                    }
 
             # Agent text response
             if node_name in AGENT_EVENT_FIELDS:
@@ -1277,27 +1320,27 @@ def stream_debate_events(
                 }
 
     # Compute totals and cost estimate, then include in run_finished
-    total_input  = sum(u.get("input_tokens",  0) for u in accumulated_usage.values())
+    total_input = sum(u.get("input_tokens", 0) for u in accumulated_usage.values())
     total_output = sum(u.get("output_tokens", 0) for u in accumulated_usage.values())
-    total_all    = sum(u.get("total_tokens",  0) for u in accumulated_usage.values())
+    total_all = sum(u.get("total_tokens", 0) for u in accumulated_usage.values())
     token_totals: dict = {}
     cost_estimate: dict | None = None
     if accumulated_usage:
         token_totals = {
             "by_node": accumulated_usage,
             "total": {
-                "input_tokens":  total_input,
+                "input_tokens": total_input,
                 "output_tokens": total_output,
-                "total_tokens":  total_all if total_all else (total_input + total_output),
+                "total_tokens": total_all if total_all else (total_input + total_output),
             },
         }
         # Build model mapping for cost estimation
         models_by_role = {
-            "diagnostic_agent":         initial_state["diagnostic_model"],
-            "skeptic_agent":            initial_state["skeptic_model"],
+            "diagnostic_agent": initial_state["diagnostic_model"],
+            "skeptic_agent": initial_state["skeptic_model"],
             "diagnostic_rebuttal_agent": initial_state["diagnostic_model"],
-            "moderator_agent":          initial_state["moderator_model"],
-            "summarize_history":        initial_state["summary_model"],
+            "moderator_agent": initial_state["moderator_model"],
+            "summarize_history": initial_state["summary_model"],
         }
         try:
             settings = get_settings()

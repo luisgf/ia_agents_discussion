@@ -6,6 +6,7 @@
 One line per tool call, written to <DATA_DIR>/audit.jsonl. Best-effort:
 audit failures never break a running debate.
 """
+
 from __future__ import annotations
 
 import json

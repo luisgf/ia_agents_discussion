@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 
 """Markdown report generation from a stored run record."""
+
 from __future__ import annotations
 
 import json
@@ -58,9 +59,11 @@ def build_markdown_report(run: dict) -> str:
             f"escéptico `{models.get('skeptic', '—')}` · moderador `{models.get('moderator', '—')}`"
         )
     if efforts and any(v and v != "none" for v in efforts.values()):
+
         def _eff(key: str) -> str:
             v = efforts.get(key) or "none"
             return v if v != "none" else "—"
+
         lines.append(
             f"- **Nivel de thinking:** diagnóstico `{_eff('diagnostic')}` · "
             f"escéptico `{_eff('skeptic')}` · moderador `{_eff('moderator')}`"
@@ -87,22 +90,15 @@ def build_markdown_report(run: dict) -> str:
             lines.append(str(ev.get("content", "")).strip() + "\n")
 
         elif etype == "agent_skipped":
-            lines.append(
-                f"### {ev.get('role', ev.get('node', ''))} — **OMITIDO**\n"
-            )
+            lines.append(f"### {ev.get('role', ev.get('node', ''))} — **OMITIDO**\n")
             lines.append(f"*Razón:* {ev.get('rationale', 'Decisión del moderador')}\n")
 
         elif etype == "history_compressed":
-            lines.append(
-                f"> 📦 *Resumen de rondas anteriores generado (ronda {ev.get('round', '—')}).*\n"
-            )
+            lines.append(f"> 📦 *Resumen de rondas anteriores generado (ronda {ev.get('round', '—')}).*\n")
 
         elif etype == "tool_call":
             status = "ERROR" if ev.get("error") else ev.get("approval", "auto")
-            lines.append(
-                f"#### Herramienta: `{ev.get('tool_name')}` "
-                f"({ev.get('agent_role', '')}, {status})\n"
-            )
+            lines.append(f"#### Herramienta: `{ev.get('tool_name')}` ({ev.get('agent_role', '')}, {status})\n")
             lines.append("```json")
             lines.append(json.dumps(ev.get("args") or {}, ensure_ascii=False, indent=2))
             lines.append("```")
@@ -200,11 +196,11 @@ def build_markdown_report(run: dict) -> str:
 
 
 _AGENT_LABELS = {
-    "diagnostic_agent":          "Diagnóstico Principal",
-    "skeptic_agent":             "Revisor Escéptico",
+    "diagnostic_agent": "Diagnóstico Principal",
+    "skeptic_agent": "Revisor Escéptico",
     "diagnostic_rebuttal_agent": "Contrarréplica",
-    "moderator_agent":           "Moderador",
-    "summarize_history":         "Resumen de historia",
+    "moderator_agent": "Moderador",
+    "summarize_history": "Resumen de historia",
 }
 
 
@@ -224,9 +220,9 @@ def _token_section(token_totals: dict | None, cost_estimate: dict | None) -> lis
         return []
     lines: list[str] = ["---\n", "## Consumo de tokens\n"]
     by_node = token_totals.get("by_node") or {}
-    total   = token_totals.get("total") or {}
+    total = token_totals.get("total") or {}
     by_node_cost = (cost_estimate or {}).get("by_node") or {}
-    total_usd    = (cost_estimate or {}).get("total_usd")
+    total_usd = (cost_estimate or {}).get("total_usd")
 
     # Header row
     lines.append("| Agente | Entrada | Salida | Total | Coste est. (USD) |")
@@ -255,7 +251,6 @@ def _token_section(token_totals: dict | None, cost_estimate: dict | None) -> lis
     lines.append("")
     if cost_estimate and not cost_estimate.get("has_prices"):
         lines.append(
-            "> Precio no disponible para uno o más modelos. "
-            "Configura `MODEL_PRICES_FILE` para estimaciones precisas.\n"
+            "> Precio no disponible para uno o más modelos. Configura `MODEL_PRICES_FILE` para estimaciones precisas.\n"
         )
     return lines
