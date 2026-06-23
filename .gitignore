@@ -1,2 +1,8 @@
 src/agents_discussion/__pycache__/*.pyc
 *.pyc
+
+# Local secrets / runtime config — never commit (use .env.example as the template)
+.env
+
+# macOS
+.DS_Store

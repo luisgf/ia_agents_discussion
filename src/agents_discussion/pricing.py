@@ -73,7 +73,6 @@ def _normalize_name(model: str) -> str:
     """Strip provider prefixes and normalise separators to '-'."""
     name = model
     for prefix in (
-        "copilot/Azure/",
         "copilot/",
         "openai/",
         "anthropic/",
