@@ -6,3 +6,10 @@ src/agents_discussion/__pycache__/*.pyc
 
 # macOS
 .DS_Store
+
+# Python virtual environments
+.venv/
+
+# uv lockfile (the project uses pip + hatchling; uv is only used ad hoc)
+uv.lock
+

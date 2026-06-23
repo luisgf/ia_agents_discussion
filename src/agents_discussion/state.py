@@ -1,9 +1,13 @@
 # Copyright (C) 2025 Luis González Fernández
 # SPDX-License-Identifier: GPL-3.0-or-later
 
-from typing import Annotated, Literal, TypedDict
+from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
+
+# Pydantic requires typing_extensions.TypedDict (not typing.TypedDict) on Python < 3.12
+# when a TypedDict is referenced from a model (e.g. ModeratorDecision.flow_directive).
+from typing_extensions import TypedDict
 
 
 class DebateMessage(BaseModel):
