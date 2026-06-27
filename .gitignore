@@ -16,3 +16,6 @@ uv.lock
 # MkDocs build output (docs/ is the source; site/ is generated)
 site/
 
+# Claude Code config — kept on disk locally, never synced to the repo
+.claude/
+
