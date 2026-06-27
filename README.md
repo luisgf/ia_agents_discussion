@@ -14,10 +14,10 @@ Agents Discussion simulates a structured SRE debate between specialized AI agent
 
 | Document | Purpose |
 |---|---|
-| [ARCHITECTURE.md](ARCHITECTURE.md) | System design, data flow, state schema, agent topology, decision rationale |
-| [CODING_STYLE.md](CODING_STYLE.md) | Python and JavaScript conventions, LangGraph patterns, project structure |
-| [OPERATIONS.md](OPERATIONS.md) | Deployment, configuration, monitoring, security, troubleshooting |
-| [USAGE.md](USAGE.md) | CLI commands, web interface, API reference, templates, tool usage |
+| [ARCHITECTURE.md](docs/architecture.md) | System design, data flow, state schema, agent topology, decision rationale |
+| [CODING_STYLE.md](docs/coding-style.md) | Python and JavaScript conventions, LangGraph patterns, project structure |
+| [OPERATIONS.md](docs/operations.md) | Deployment, configuration, monitoring, security, troubleshooting |
+| [USAGE.md](docs/usage.md) | CLI commands, web interface, API reference, templates, tool usage |
 
 ---
 
@@ -114,7 +114,7 @@ The web interface provides:
                           └────────────────────┘
 ```
 
-See [ARCHITECTURE.md](ARCHITECTURE.md) for full data flow, state schema, and decision details.
+See [ARCHITECTURE.md](docs/architecture.md) for full data flow, state schema, and decision details.
 
 ---
 
@@ -146,7 +146,7 @@ Configuration is entirely via environment variables or `.env` file:
 | `EARLY_OUT_ENABLED` | Enable early-out termination | `true` |
 | `TOOL_APPROVAL_REQUIRED` | Require approval for sensitive tools | `true` |
 
-See [OPERATIONS.md](OPERATIONS.md) for complete configuration reference.
+See [OPERATIONS.md](docs/operations.md) for complete configuration reference.
 
 ---
 
@@ -167,7 +167,7 @@ GET  /api/prompts            # Available templates
 GET  /api/settings           # Current settings
 ```
 
-See [USAGE.md](USAGE.md) for full API reference and examples.
+See [USAGE.md](docs/usage.md) for full API reference and examples.
 
 ---
 
@@ -185,7 +185,7 @@ agents-discuss "Latency spike" \
   --include "src/**/*.py"
 ```
 
-See [OPERATIONS.md](OPERATIONS.md) for deployment, monitoring, and troubleshooting.
+See [OPERATIONS.md](docs/operations.md) for deployment, monitoring, and troubleshooting.
 
 ---
 
@@ -194,17 +194,20 @@ See [OPERATIONS.md](OPERATIONS.md) for deployment, monitoring, and troubleshooti
 | File | Audience | Content |
 |---|---|---|
 | `README.md` | Everyone | Overview, quickstart, links |
-| `ARCHITECTURE.md` | Developers, architects | Design, state flow, schema, decisions |
-| `CODING_STYLE.md` | Contributors | Conventions, patterns, project structure |
-| `OPERATIONS.md` | DevOps, SREs | Deploy, config, monitor, troubleshoot |
-| `USAGE.md` | End users | CLI, web UI, API, templates, tools |
+| `docs/architecture.md` | Developers, architects | Design, state flow, schema, decisions |
+| `docs/coding-style.md` | Contributors | Conventions, patterns, project structure |
+| `docs/operations.md` | DevOps, SREs | Deploy, config, monitor, troubleshoot |
+| `docs/usage.md` | End users | CLI, web UI, API, templates, tools |
+| `docs/reference/` | Everyone | Generated from code: API, CLI, config, tools, events |
+
+The full documentation is published at **<https://luisgf.github.io/ia_agents_discussion/>**.
 
 ---
 
 ## Contributing
 
-1. Read [CODING_STYLE.md](CODING_STYLE.md) for conventions.
-2. Review [ARCHITECTURE.md](ARCHITECTURE.md) for design rationale.
+1. Read [CODING_STYLE.md](docs/coding-style.md) for conventions.
+2. Review [ARCHITECTURE.md](docs/architecture.md) for design rationale.
 3. Run `ruff check .` and `ruff format --check .` before committing.
 
 ---

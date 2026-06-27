@@ -32,7 +32,7 @@ This document defines the coding conventions for the Agents Discussion project.
 - **Type checker**: relies on IDE / editor type checking (mypy optional); Pydantic provides runtime validation.
 - **Frontend**: Vanilla JavaScript, no build step. `marked` for Markdown, `DOMPurify` for sanitization.
 
-### Ruff Configuration (actual — see [`pyproject.toml`](pyproject.toml))
+### Ruff Configuration (actual — see [`pyproject.toml`](https://github.com/luisgf/ia_agents_discussion/blob/main/pyproject.toml))
 
 ```toml
 [tool.ruff]
@@ -61,7 +61,7 @@ their upstream headers and are left untouched.
 ```
 
 New files must include this header. The project is licensed under
-**GPL-3.0-or-later**; see [`LICENSE`](LICENSE) for the full text.
+**GPL-3.0-or-later**; see [`LICENSE`](https://github.com/luisgf/ia_agents_discussion/blob/main/LICENSE) for the full text.
 
 ---
 
@@ -474,7 +474,7 @@ body.innerHTML = DOMPurify.sanitize(html);
 ## Pre-commit Rules
 
 Run these locally before every commit. They are also enforced in CI
-([`.github/workflows/ci.yml`](.github/workflows/ci.yml)) on every push to `main` and on
+([`.github/workflows/ci.yml`](https://github.com/luisgf/ia_agents_discussion/blob/main/.github/workflows/ci.yml)) on every push to `main` and on
 pull requests, so a green local run should mean a green CI run. There is no
 `.pre-commit-config.yaml`; CI is the gate.
 
@@ -506,7 +506,7 @@ history already uses.
 
 ### Single source of truth
 
-`__version__` in [`src/agents_discussion/__init__.py`](src/agents_discussion/__init__.py) is
+`__version__` in [`src/agents_discussion/__init__.py`](https://github.com/luisgf/ia_agents_discussion/blob/main/src/agents_discussion/__init__.py) is
 the only place the version is declared. `pyproject.toml` derives it via
 `[tool.hatch.version]`, so **never edit the version in two places**.
 
@@ -526,7 +526,7 @@ Look at the commits since the last tag and pick the highest bump they imply:
 1. Bump `__version__` in `__init__.py` to the new `X.Y.Z`.
 2. Commit it: `git commit -am "chore(release): vX.Y.Z"`.
 3. Tag and push: `git tag vX.Y.Z && git push && git push --tags`.
-4. Pushing the `v*` tag triggers [`.github/workflows/release.yml`](.github/workflows/release.yml),
+4. Pushing the `v*` tag triggers [`.github/workflows/release.yml`](https://github.com/luisgf/ia_agents_discussion/blob/main/.github/workflows/release.yml),
    which verifies the tag matches `__version__`, builds the sdist + wheel, and publishes a
    GitHub Release with auto-generated notes.
 

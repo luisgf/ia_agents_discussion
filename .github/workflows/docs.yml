@@ -1,0 +1,79 @@
+name: Docs
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e .
+          pip install mkdocs-material
+      - name: Anti-drift gate — reference docs must be freshly generated
+        run: |
+          python scripts/gen_docs.py
+          if ! git diff --quiet -- docs/reference; then
+            echo "::error::docs/reference is stale. Run 'python scripts/gen_docs.py' and commit."
+            git --no-pager diff -- docs/reference
+            exit 1
+          fi
+      - name: Build site (strict — fails on broken links)
+        run: mkdocs build --strict
+
+  deploy:
+    needs: build
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e . mkdocs-material
+      - name: Deploy to GitHub Pages (gh-pages branch)
+        run: mkdocs gh-deploy --force
+
+  mirror-wiki:
+    needs: deploy
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Mirror docs/ to the GitHub Wiki
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -e
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          if ! git clone "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.wiki.git" wiki 2>/dev/null; then
+            echo "::warning::Wiki repo not found. Create the first wiki page once to initialize it, then re-run."
+            exit 0
+          fi
+          rm -f wiki/*.md
+          cp docs/index.md wiki/Home.md
+          for f in docs/*.md; do
+            [ "$f" = "docs/index.md" ] && continue
+            cp "$f" "wiki/$(basename "${f%.md}").md"
+          done
+          for f in docs/reference/*.md; do
+            cp "$f" "wiki/Reference-$(basename "${f%.md}").md"
+          done
+          cd wiki
+          git add -A
+          git commit -m "docs: sync from ${GITHUB_SHA::7}" && git push || echo "Wiki already up to date."

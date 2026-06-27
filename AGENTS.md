@@ -387,7 +387,8 @@ with `cached: true`, "cache" badge in the UI). The served result carries the pre
 
 | Document | Content |
 |---|---|
-| `ARCHITECTURE.md` | Detailed design, state schema, topology, decisions |
-| `CODING_STYLE.md` | Python and JS conventions, LangGraph patterns |
-| `OPERATIONS.md` | Deployment, full configuration, troubleshooting |
-| `USAGE.md` | CLI, web UI, API, templates, tools |
+| `docs/architecture.md` | Detailed design, state schema, topology, decisions |
+| `docs/coding-style.md` | Python and JS conventions, LangGraph patterns |
+| `docs/operations.md` | Deployment, full configuration, troubleshooting |
+| `docs/usage.md` | CLI, web UI, API, templates, tools |
+| `docs/reference/` | Generated from code (API, CLI, config, tools, events) — see `scripts/gen_docs.py` |

@@ -1,0 +1,46 @@
+site_name: Agents Discussion
+site_description: Multi-agent root cause analysis for production incidents
+site_url: https://luisgf.github.io/ia_agents_discussion/
+repo_url: https://github.com/luisgf/ia_agents_discussion
+repo_name: luisgf/ia_agents_discussion
+strict: true
+
+theme:
+  name: material
+  features:
+    - navigation.sections
+    - navigation.top
+    - content.code.copy
+    - search.suggest
+  palette:
+    - scheme: default
+      primary: indigo
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+    - scheme: slate
+      primary: indigo
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+
+nav:
+  - Home: index.md
+  - Architecture: architecture.md
+  - Usage: usage.md
+  - Operations: operations.md
+  - Coding style: coding-style.md
+  - Reference:
+      - REST API: reference/api.md
+      - CLI: reference/cli.md
+      - Configuration: reference/configuration.md
+      - Diagnostic tools: reference/tools.md
+      - SSE events: reference/events.md
+
+markdown_extensions:
+  - admonition
+  - tables
+  - pymdownx.highlight
+  - pymdownx.superfences
+  - toc:
+      permalink: true

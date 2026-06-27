@@ -13,3 +13,6 @@ src/agents_discussion/__pycache__/*.pyc
 # uv lockfile (the project uses pip + hatchling; uv is only used ad hoc)
 uv.lock
 
+# MkDocs build output (docs/ is the source; site/ is generated)
+site/
+

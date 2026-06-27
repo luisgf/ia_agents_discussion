@@ -18,7 +18,7 @@ from agents_discussion.project_context import build_project_context
 console = Console()
 
 
-def parse_args() -> argparse.Namespace:
+def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="agents-discuss",
         description="Run a technical diagnosis debate with three AI agents.",
@@ -85,7 +85,11 @@ def parse_args() -> argparse.Namespace:
         default=None,
         help="Confidence threshold for early-out. Overrides EARLY_OUT_THRESHOLD env var.",
     )
-    return parser.parse_args()
+    return parser
+
+
+def parse_args() -> argparse.Namespace:
+    return build_parser().parse_args()
 
 
 def main() -> None:
