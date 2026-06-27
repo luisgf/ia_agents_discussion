@@ -14,6 +14,8 @@ Usage:  python scripts/gen_docs.py      # rewrites docs/reference/*.md
 from __future__ import annotations
 
 import re
+import types
+import typing
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -31,9 +33,19 @@ def _write(name: str, body: str) -> None:
     (REFDIR / name).write_text(BANNER + "\n" + body.rstrip() + "\n", encoding="utf-8")
 
 
+def _esc(cell: str) -> str:
+    """Escape pipes so a value can sit inside a Markdown table cell (kept out of
+    f-strings: a backslash inside an f-string expression is a SyntaxError on 3.11)."""
+    return cell.replace("|", "\\|")
+
+
 def _type_name(annotation: object) -> str:
+    """Stable, Python-version-independent rendering of a type annotation."""
     if annotation is None:
         return "—"
+    origin = typing.get_origin(annotation)
+    if origin is types.UnionType or origin is typing.Union:
+        return " | ".join("None" if a is type(None) else _type_name(a) for a in typing.get_args(annotation))
     name = getattr(annotation, "__name__", None)
     if name:
         return name
@@ -66,11 +78,34 @@ def gen_api() -> set[str]:
 
 # ── CLI ───────────────────────────────────────────────────────────────────────
 def gen_cli() -> None:
+    import argparse
+
     from agents_discussion.cli import build_parser
 
-    help_text = build_parser().format_help().rstrip()
-    body = f"# CLI: `agents-discuss`\n\n```text\n{help_text}\n```"
-    _write("cli.md", body)
+    # Build a deterministic table from the parser actions — argparse's
+    # format_help() output varies across Python versions (wrapping, flag style).
+    rows = []
+    for action in build_parser()._actions:
+        if action.dest == "help":
+            continue
+        if action.option_strings:
+            flags = ", ".join(f"`{o}`" for o in action.option_strings)
+        else:
+            flags = f"`{action.dest}` (positional)"
+        help_text = " ".join((action.help or "").split()).replace("|", "\\|")
+        default = action.default
+        default_str = "—" if default in (None, False, [], argparse.SUPPRESS) else f"`{default!r}`"
+        rows.append((flags, default_str, help_text))
+    lines = [
+        "# CLI: `agents-discuss`",
+        "",
+        "Run a technical diagnosis debate from the terminal.",
+        "",
+        "| Option | Default | Description |",
+        "|---|---|---|",
+    ]
+    lines += [f"| {flags} | {default} | {help_text} |" for flags, default, help_text in rows]
+    _write("cli.md", "\n".join(lines))
 
 
 # ── Configuration (env vars) ──────────────────────────────────────────────────
@@ -97,7 +132,7 @@ def gen_config() -> set[str]:
         "| Variable | Type | Default |",
         "|---|---|---|",
     ]
-    lines += [f"| `{alias}` | {typ} | {default} |" for alias, typ, default in rows]
+    lines += [f"| `{alias}` | {_esc(typ)} | {_esc(default)} |" for alias, typ, default in rows]
     _write("configuration.md", "\n".join(lines))
     return aliases
 

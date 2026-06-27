@@ -3,42 +3,18 @@
 
 # CLI: `agents-discuss`
 
-```text
-usage: agents-discuss [-h] [--file FILE] [--base-context BASE_CONTEXT]
-                      [--no-redact-context] [--project PROJECT]
-                      [--include INCLUDE] [--max-files MAX_FILES]
-                      [--max-chars-per-file MAX_CHARS_PER_FILE]
-                      [--show-history] [--no-compress-history]
-                      [--early-out-threshold EARLY_OUT_THRESHOLD]
-                      [topic]
+Run a technical diagnosis debate from the terminal.
 
-Run a technical diagnosis debate with three AI agents.
-
-positional arguments:
-  topic                 Technical issue, incident, performance problem, or
-                        code fix to diagnose.
-
-options:
-  -h, --help            show this help message and exit
-  --file, -f FILE       Optional file with logs, stack traces, code snippets,
-                        metrics, or incident context.
-  --base-context BASE_CONTEXT
-                        Optional baseline context file with architecture,
-                        services, non-secret connection parameters, or
-                        constraints. Can be repeated.
-  --no-redact-context   Do not redact likely secrets from --file and --base-
-                        context before sending them to models.
-  --project PROJECT     Optional project directory to read source files from.
-  --include INCLUDE     Glob pattern to include from --project. Can be
-                        repeated. Defaults to common project files.
-  --max-files MAX_FILES
-                        Maximum project files to include. Default: 20.
-  --max-chars-per-file MAX_CHARS_PER_FILE
-                        Maximum characters per included file. Default: 12000.
-  --show-history        Print every agent turn after the final result.
-  --no-compress-history
-                        Disable history compression between rounds.
-  --early-out-threshold EARLY_OUT_THRESHOLD
-                        Confidence threshold for early-out. Overrides
-                        EARLY_OUT_THRESHOLD env var.
-```
+| Option | Default | Description |
+|---|---|---|
+| `topic` (positional) | — | Technical issue, incident, performance problem, or code fix to diagnose. |
+| `--file`, `-f` | — | Optional file with logs, stack traces, code snippets, metrics, or incident context. |
+| `--base-context` | — | Optional baseline context file with architecture, services, non-secret connection parameters, or constraints. Can be repeated. |
+| `--no-redact-context` | — | Do not redact likely secrets from --file and --base-context before sending them to models. |
+| `--project` | — | Optional project directory to read source files from. |
+| `--include` | — | Glob pattern to include from --project. Can be repeated. Defaults to common project files. |
+| `--max-files` | `20` | Maximum project files to include. Default: 20. |
+| `--max-chars-per-file` | `12000` | Maximum characters per included file. Default: 12000. |
+| `--show-history` | — | Print every agent turn after the final result. |
+| `--no-compress-history` | — | Disable history compression between rounds. |
+| `--early-out-threshold` | — | Confidence threshold for early-out. Overrides EARLY_OUT_THRESHOLD env var. |

@@ -24,7 +24,7 @@ Set via environment variables or a `.env` file (see `.env.example`).
 | `MAX_CONSECUTIVE_ERRORS` | int | `3` |
 | `MAX_ROUNDS` | int | `4` |
 | `MAX_TOOL_CALLS_PER_AGENT` | int | `8` |
-| `MODEL_PRICES_FILE` | Union | — |
+| `MODEL_PRICES_FILE` | Path \| None | — |
 | `MODERATOR_MODEL` | str | `'copilot/claude-sonnet-4.6'` |
 | `MODERATOR_REASONING_EFFORT` | str | `'none'` |
 | `PROMPTS_DIR` | Path | (computed) |
